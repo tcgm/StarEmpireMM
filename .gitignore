@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+backups/
+builds/
+dist/
+releases/
+runtime/
+state/
+logs/
+temp/
+*.semod
+*.seloader
+*.exe
+*.log
+*.key
+*.pem
+
+# Never commit an installed or extracted game.
+Client.exe
+Client/
+game/
+Star Empire/
+
