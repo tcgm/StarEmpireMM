@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.7
+
+- Added safe compatibility support for Star Empire 0.4.66's managed turret
+  window queue while retaining support for the earlier profiler boundary.
+- Missing, duplicate, or mixed foreground boundaries still stop safely instead
+  of guessing where loader code belongs.
+
 ## v0.1
 
 First public release, built from Mod Manager 0.4.6.

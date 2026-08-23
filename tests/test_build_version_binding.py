@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from installer.authored_fragments import CLIENT_MOD_LOADER_OVERLAY_V1
 from installer.hook_recipe import parse_hook_recipe
 from installer.manager_core import ProcessProbeResult
 from installer.release_profiles import (BINDING_SCHEMA, FULL_UI_POLICY,
@@ -64,6 +65,19 @@ def _show_use_launcher_message():
 if __name__ == "__main__":
     start()
 """
+    return text.replace("\n", newline).encode("utf-8")
+
+
+def _managed_client_source(newline: str = "\n") -> bytes:
+    text = _client_source().decode("utf-8")
+    text = text.replace(
+        "            self._profiler.mark(\"turret_layout\")\n"
+        "            self._draw_turret_layout(frame)\n",
+        "            _queue_modal(\n"
+        "                \"turret_layout\", self._turret_layout_open,\n"
+        "                lambda: self._draw_turret_layout(_frame))\n"
+        "            self._gui_windows.flush_draw_queue()\n",
+    )
     return text.replace("\n", newline).encode("utf-8")
 
 
@@ -255,6 +269,29 @@ def unrelated(self):
                     tuple(offsets[item]
                           for item in FULL_UI_POLICY.fragment_ids))
 
+    def test_managed_turret_queue_is_the_foreground_boundary(self):
+        for newline in ("\n", "\r\n"):
+            with self.subTest(newline=repr(newline)):
+                source = _managed_client_source(newline)
+                boundary = source.index(
+                    ("            _queue_modal(" + newline).encode("utf-8"))
+                target_offsets = locate_target_vitals_offsets(
+                    source, TARGET_VITALS_ALPHA_POLICY)
+                full_offsets = locate_release_offsets(source, FULL_UI_POLICY)
+                loader_offsets = locate_release_offsets(
+                    source, MOD_LOADER_POLICY)
+                self.assertEqual(
+                    boundary,
+                    tuple(target_offsets[item] for item in
+                          TARGET_VITALS_ALPHA_POLICY.fragment_ids)[2])
+                self.assertEqual(
+                    boundary,
+                    tuple(full_offsets[item]
+                          for item in FULL_UI_POLICY.fragment_ids)[3])
+                self.assertEqual(
+                    boundary,
+                    loader_offsets[CLIENT_MOD_LOADER_OVERLAY_V1])
+
     def test_missing_or_ambiguous_semantic_anchor_fails_closed(self):
         missing = _client_source().replace(
             b'self._profiler.mark("turret_layout")',
@@ -269,6 +306,16 @@ def unrelated(self):
         )
         with self.assertRaisesRegex(VersionBindingError, "missing or ambiguous"):
             locate_target_vitals_offsets(duplicate, TARGET_VITALS_ALPHA_POLICY)
+
+        mixed_layout = _managed_client_source().replace(
+            b"            _queue_modal(\n",
+            b'            self._profiler.mark("turret_layout")\n'
+            b"            _queue_modal(\n",
+            1,
+        )
+        with self.assertRaisesRegex(VersionBindingError, "missing or ambiguous"):
+            locate_target_vitals_offsets(
+                mixed_layout, TARGET_VITALS_ALPHA_POLICY)
 
     def test_nested_continue_inert_quit_and_unowned_profiler_are_not_anchors(self):
         cases = (

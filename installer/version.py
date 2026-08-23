@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 
 
-MANAGER_VERSION = "0.4.6"
+MANAGER_VERSION = "0.4.7"
 
 
 @dataclass(frozen=True)
