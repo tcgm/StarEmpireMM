@@ -15,17 +15,18 @@ from installer.manager_core import (CompatibilityPack, InstallState,
                                     save_install_state, sha256_file)
 from installer.mod_package import PackageError
 from installer.manager_ui import (ManagerApp, acquire_signed_update,
-                                  action_availability,
-                                  compatibility_test_available,
-                                  detect_game_build_identity,
-                                  discover_local_loader,
-                                  load_mod_display_details,
-                                  load_selected_game,
-                                  manager_internal_loader_root,
-                                  mod_compatibility_view,
-                                  MOD_README_MAX_BYTES,
-                                  save_selected_game,
-                                  selected_game_matches_inspection)
+                                   action_availability,
+                                   compatibility_test_available,
+                                   detect_game_build_identity,
+                                   discover_local_loader,
+                                   load_mod_display_details,
+                                   load_selected_game,
+                                   manager_internal_loader_root,
+                                   mod_compatibility_view,
+                                   MOD_REGISTRY_POLL_MS,
+                                   MOD_README_MAX_BYTES,
+                                   save_selected_game,
+                                   selected_game_matches_inspection)
 from installer.trusted_keys import (BUILTIN_TRUSTED_KEYS,
                                     DEFAULT_UPDATE_FEED_URL,
                                     load_trust_configuration,
@@ -1049,6 +1050,53 @@ class ManagerUiStateTests(unittest.TestCase):
             app._save_manager_settings()
         app.debug_logging.set.assert_called_once_with(False)
         error.assert_called_once()
+
+    def test_registry_change_refreshes_visible_mod_list(self):
+        app = object.__new__(ManagerApp)
+        app._mod_registry_stamp = (10, 20)
+        app._mod_registry_file_stamp = unittest.mock.Mock(
+            return_value=(11, 21))
+        app._refresh_mods = unittest.mock.Mock()
+
+        app._refresh_mods_if_registry_changed()
+
+        app._refresh_mods.assert_called_once_with()
+
+    def test_unchanged_registry_does_not_rebuild_visible_mod_list(self):
+        app = object.__new__(ManagerApp)
+        app._mod_registry_stamp = (10, 20)
+        app._mod_registry_file_stamp = unittest.mock.Mock(
+            return_value=(10, 20))
+        app._refresh_mods = unittest.mock.Mock()
+
+        app._refresh_mods_if_registry_changed()
+
+        app._refresh_mods.assert_not_called()
+
+    def test_registry_poll_reschedules_after_check(self):
+        app = object.__new__(ManagerApp)
+        app.root = unittest.mock.Mock()
+        app._mod_registry_watch_id = "previous"
+        app._refresh_mods_if_registry_changed = unittest.mock.Mock()
+
+        app._poll_mod_registry()
+
+        app._refresh_mods_if_registry_changed.assert_called_once_with()
+        app.root.after.assert_called_once_with(
+            MOD_REGISTRY_POLL_MS, app._poll_mod_registry)
+
+    def test_close_cancels_registry_watch(self):
+        app = object.__new__(ManagerApp)
+        app.root = unittest.mock.Mock()
+        app._mod_registry_watch_id = "watch-1"
+        app._candidate = None
+        app._cleanup_candidate = unittest.mock.Mock(return_value=None)
+
+        app._close_manager()
+
+        app.root.after_cancel.assert_called_once_with("watch-1")
+        app.root.destroy.assert_called_once_with()
+        self.assertIsNone(app._mod_registry_watch_id)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3
+
+- The Mods list now notices changes to the loader registry while the Manager
+  is open, so it always shows the mods that will load with the game.
+- Registry checks run quietly in the background and when the Manager regains
+  focus without repeatedly rebuilding an unchanged list.
+
 ## v0.2
 
 Manager and public release version are both 0.2.
@@ -11,7 +18,7 @@ Manager and public release version are both 0.2.
 
 ## v0.1
 
-First public release, built from Mod Manager 0.4.6.
+First public release.
 
 - One-click global mod support with clear enabled and disabled states.
 - Drag-and-drop and file-picker installation for keyless `.semod` packages.
