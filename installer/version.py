@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 
 
-MANAGER_VERSION = "0.4.6"
+MANAGER_VERSION = "0.1"
 
 
 @dataclass(frozen=True)
@@ -58,6 +58,8 @@ def record_startup(state_root: Path) -> Path:
 def version_tuple(value: str) -> tuple[int, int, int]:
     """Parse the deliberately small release-version grammar used by packages."""
     parts = str(value).split(".")
-    if len(parts) != 3 or any(not part.isdigit() for part in parts):
-        raise ValueError("version must contain three numeric components")
+    if len(parts) not in (2, 3) or any(not part.isdigit() for part in parts):
+        raise ValueError("version must contain two or three numeric components")
+    if len(parts) == 2:
+        parts.append("0")
     return tuple(int(part) for part in parts)  # type: ignore[return-value]

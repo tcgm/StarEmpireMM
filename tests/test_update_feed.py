@@ -52,7 +52,7 @@ class UpdateFeedTests(unittest.TestCase):
             "schema": 1, "format": "star-empire-ui-mod-feed",
             "channel": "stable", "key_id": "test", "pack_id": "pack/id",
             "mod_version": "1.2.3", "game_version": "0.4.42",
-            "manager_version_min": "0.2.0",
+            "manager_version_min": "0.1",
             "expires_at": expires.isoformat(), "package_url": package_url,
             "package_size": 123, "package_sha256": "A" * 64,
         }
@@ -80,7 +80,7 @@ class UpdateFeedTests(unittest.TestCase):
             "package_key_id": "package", "pack_id": "alpha-045",
             "mod_version": "0.2.0", "game_version": "0.4.45",
             "official_client_sha256": "C" * 64,
-            "manager_version_min": "0.2.0",
+            "manager_version_min": "0.1",
             "package_url": "https://example.test/045.seuimod",
             "package_size": 456, "package_sha256": "D" * 64,
         }, {
@@ -96,7 +96,7 @@ class UpdateFeedTests(unittest.TestCase):
             "channel": "alpha", "key_id": "feed", "sequence": 7,
             "published_at": datetime.now(timezone.utc).isoformat(),
             "expires_at": expires.isoformat(),
-            "manager_version_min": "0.2.0", "releases": releases,
+            "manager_version_min": "0.1", "releases": releases,
         }
         payload = (json.dumps(
             data, sort_keys=True, separators=(",", ":")) + "\n").encode()
@@ -170,7 +170,7 @@ class UpdateFeedTests(unittest.TestCase):
             "package_key_id": "package", "pack_id": "same",
             "mod_version": "0.2.0", "game_version": "0.4.45",
             "official_client_sha256": "C" * 64,
-            "manager_version_min": "0.2.0",
+            "manager_version_min": "0.1",
             "package_url": "https://example.test/045.seuimod",
             "package_size": 456, "package_sha256": "D" * 64,
         }
@@ -231,7 +231,7 @@ class UpdateFeedTests(unittest.TestCase):
     def test_package_download_is_atomic_hash_checked_and_metadata_bound(self) -> None:
         payload = b"signed package bytes"
         feed = UpdateFeed(
-            "stable", "test", "pack", "1.2.3", "0.4.42", "0.2.0",
+            "stable", "test", "pack", "1.2.3", "0.4.42", "0.1",
             datetime.now(timezone.utc) + timedelta(days=1),
             "https://example.test/mod.seuimod", len(payload),
             hashlib.sha256(payload).hexdigest().upper())
