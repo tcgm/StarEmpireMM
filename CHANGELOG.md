@@ -2,7 +2,7 @@
 
 ## v0.2
 
-Second public release, built from Mod Manager 0.4.7.
+Manager and public release version are both 0.2.
 
 - Added safe compatibility support for Star Empire 0.4.66's managed turret
   window queue while retaining support for the earlier profiler boundary.

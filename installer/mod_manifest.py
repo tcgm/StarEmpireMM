@@ -13,7 +13,8 @@ MOD_FORMAT = "star-empire-mod"
 MOD_SCHEMA = 1
 _MOD_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
 _VERSION = re.compile(
-    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:\.(0|[1-9][0-9]*))?"
     r"(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$")
 _ENTRYPOINT = re.compile(
     r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
@@ -60,14 +61,18 @@ def _mod_id(value: Any, label: str = "mod_id") -> str:
 def _version(value: Any, label: str) -> str:
     result = _require_string(value, label, maximum=64)
     if not _VERSION.fullmatch(result):
-        raise ModManifestError(f"{label} must use semantic version form X.Y.Z")
+        raise ModManifestError(
+            f"{label} must use version form X.Y or X.Y.Z")
     return result
 
 
 def version_core(value: str) -> tuple[int, int, int]:
     """Return the numeric comparison core of a validated mod version."""
     validated = _version(value, "version")
-    return tuple(int(part) for part in validated.split("-", 1)[0].split("."))
+    parts = validated.split("-", 1)[0].split(".")
+    if len(parts) == 2:
+        parts.append("0")
+    return tuple(int(part) for part in parts)  # type: ignore[return-value]
 
 
 def version_at_least(actual: str, required: str) -> bool:
