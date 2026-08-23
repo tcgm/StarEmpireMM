@@ -64,6 +64,7 @@ MOD_README_MAX_BYTES = 256 * 1024
 MOD_PREVIEW_MAX_BYTES = 8 * 1024 * 1024
 MOD_PREVIEW_MAX_WIDTH = 360
 MOD_PREVIEW_MAX_HEIGHT = 220
+MOD_REGISTRY_POLL_MS = 1000
 
 
 @dataclass(frozen=True)
@@ -550,6 +551,8 @@ class ManagerApp:
         self._mod_update_active = False
         self._update_generation = 0
         self._update_check_active = False
+        self._mod_registry_stamp: tuple[int, int] | None = None
+        self._mod_registry_watch_id: str | None = None
         try:
             remembered_game = load_selected_game(self._selected_game_path)
         except ManagerDataError:
@@ -566,6 +569,9 @@ class ManagerApp:
             self.game_path.set(str(remembered_game))
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._close_manager)
+        self.root.bind(
+            "<FocusIn>", self._refresh_mods_if_registry_changed, add="+")
+        self._schedule_mod_registry_watch()
         self._drop_target = install_windows_file_drop(
             self.root, self._handle_dropped_mod_files)
         if self.game_path.get().strip():
@@ -586,6 +592,12 @@ class ManagerApp:
         return None
 
     def _close_manager(self) -> None:
+        if self._mod_registry_watch_id is not None:
+            try:
+                self.root.after_cancel(self._mod_registry_watch_id)
+            except TclError:
+                pass
+            self._mod_registry_watch_id = None
         self._cleanup_candidate(self._candidate)
         self._candidate = None
         self.root.destroy()
@@ -974,6 +986,10 @@ class ManagerApp:
     def _refresh_mods(self) -> None:
         if not hasattr(self, "mods_tree"):
             return
+        try:
+            observed_stamp = self._mod_registry_file_stamp()
+        except OSError:
+            observed_stamp = self._mod_registry_stamp
         current = self._selected_mod_id()
         for item in self.mods_tree.get_children():
             self.mods_tree.delete(item)
@@ -994,7 +1010,36 @@ class ManagerApp:
                         compatibility.status))
         if current is not None and self.mods_tree.exists(current):
             self.mods_tree.selection_set(current)
+        self._mod_registry_stamp = observed_stamp
         self._set_mod_actions()
+
+    def _mod_registry_file_stamp(self) -> tuple[int, int] | None:
+        registry_path = self._mods.state_root / "mods.json"
+        try:
+            stat = registry_path.stat()
+        except FileNotFoundError:
+            return None
+        return stat.st_mtime_ns, stat.st_size
+
+    def _refresh_mods_if_registry_changed(self, _event=None) -> None:
+        try:
+            current_stamp = self._mod_registry_file_stamp()
+        except OSError:
+            return
+        if current_stamp != self._mod_registry_stamp:
+            self._refresh_mods()
+
+    def _schedule_mod_registry_watch(self) -> None:
+        try:
+            self._mod_registry_watch_id = self.root.after(
+                MOD_REGISTRY_POLL_MS, self._poll_mod_registry)
+        except TclError:
+            self._mod_registry_watch_id = None
+
+    def _poll_mod_registry(self) -> None:
+        self._mod_registry_watch_id = None
+        self._refresh_mods_if_registry_changed()
+        self._schedule_mod_registry_watch()
 
     def _toggle_mod_from_click(self, event) -> str | None:
         if self.mods_tree.identify_column(event.x) != "#1":

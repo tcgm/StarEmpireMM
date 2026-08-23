@@ -8,8 +8,8 @@ from installer.version import MANAGER_VERSION, version_tuple
 
 class ReleaseVersionAlignmentTests(unittest.TestCase):
     def test_manager_uses_the_public_github_version(self):
-        self.assertEqual("0.2", MANAGER_VERSION)
-        self.assertEqual((0, 2, 0), version_tuple(MANAGER_VERSION))
+        self.assertEqual("0.3", MANAGER_VERSION)
+        self.assertEqual((0, 3, 0), version_tuple(MANAGER_VERSION))
         self.assertEqual((0, 2, 1), version_tuple("0.2.1"))
 
     def test_mod_versions_accept_the_public_github_format(self):
