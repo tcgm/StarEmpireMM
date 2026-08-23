@@ -300,6 +300,40 @@ def _exactly_one(items: Iterable[object], label: str) -> object:
     return found[0]
 
 
+def _is_managed_turret_layout_queue(node: ast.AST) -> bool:
+    """The 0.4.66+ managed-window equivalent of the old profiler boundary."""
+    if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Call):
+        return False
+    call = node.value
+    if (not isinstance(call.func, ast.Name) or call.func.id != "_queue_modal"
+            or len(call.args) != 3 or call.keywords):
+        return False
+    label, active, draw = call.args
+    if (not isinstance(label, ast.Constant) or label.value != "turret_layout"
+            or not isinstance(active, ast.Attribute)
+            or not isinstance(active.value, ast.Name)
+            or active.value.id != "self"
+            or active.attr != "_turret_layout_open"
+            or not isinstance(draw, ast.Lambda)
+            or not isinstance(draw.body, ast.Call)):
+        return False
+    callback = draw.body.func
+    return (isinstance(callback, ast.Attribute)
+            and isinstance(callback.value, ast.Name)
+            and callback.value.id == "self"
+            and callback.attr == "_draw_turret_layout")
+
+
+def _turret_foreground_boundary(run: ast.AST) -> ast.AST:
+    """Find exactly one reviewed legacy or managed turret foreground edge."""
+    return _exactly_one(
+        (node for node in ast.walk(run)
+         if (_is_profiler_mark(node, "turret_layout")
+             or _is_managed_turret_layout_queue(node))),
+        "turret-layout foreground boundary",
+    )
+
+
 def _policy_fragment_ids(
         policy: ReleasePolicy, module_name: str) -> tuple[str, ...]:
     return tuple(
@@ -338,11 +372,7 @@ def locate_target_vitals_offsets(
                     and _is_event_quit_test(statements[index + 1])):
                 event_boundaries.append(statements[index + 1])
     event_boundary = _exactly_one(event_boundaries, "turret event guard")
-    overlay_boundary = _exactly_one(
-        (node for node in ast.walk(run)
-         if _is_profiler_mark(node, "turret_layout")),
-        "turret-layout foreground boundary",
-    )
+    overlay_boundary = _turret_foreground_boundary(run)
     main_guard = _exactly_one(
         (node for node in tree.body if _is_main_guard(node)),
         "top-level entry point",
@@ -402,11 +432,7 @@ def locate_release_offsets(
          if _is_render_frame_assignment(node)),
         "RenderFrame construction",
     )
-    overlay_boundary = _exactly_one(
-        (node for node in ast.walk(run)
-         if _is_profiler_mark(node, "turret_layout")),
-        "turret-layout foreground boundary",
-    )
+    overlay_boundary = _turret_foreground_boundary(run)
     main_guard = _exactly_one(
         (node for node in tree.body if _is_main_guard(node)),
         "top-level entry point",
