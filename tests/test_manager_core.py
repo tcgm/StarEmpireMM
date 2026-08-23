@@ -242,6 +242,8 @@ class ManagerCoreTests(unittest.TestCase):
 
         self.assertEqual(InstallStatus.NO_UPDATE_PACK, result.status)
         self.assertIn("new game version", result.message)
+        self.assertIn("Update the Mod Manager", result.message)
+        self.assertNotIn("Select", result.message)
 
     def test_matching_hash_with_mismatched_reported_version_still_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

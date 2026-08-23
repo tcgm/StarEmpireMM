@@ -491,7 +491,9 @@ def inspect_installation(game_root: Path, pack: CompatibilityPack | None,
             if pack is None:
                 return Inspection(
                     InstallStatus.NO_UPDATE_PACK, root, client, version, current,
-                    "A new game version replaced the managed client. Select an authorised loader package so the Manager can verify and rebuild its hooks.",
+                    "A new game version replaced the managed client, but this "
+                    "Manager has no usable internal compatibility template. "
+                    "Update the Mod Manager and try again.",
                     state, None)
             return Inspection(
                 InstallStatus.UNSUPPORTED_VANILLA, root, client, version,
@@ -515,7 +517,9 @@ def inspect_installation(game_root: Path, pack: CompatibilityPack | None,
 
     if pack is None:
         return Inspection(InstallStatus.NO_UPDATE_PACK, root, client, version,
-                          current, "Choose an authorised local update pack before installing.",
+                          current,
+                          "Internal compatibility support is unavailable. "
+                          "Update the Mod Manager and try again.",
                           state, None)
     if not pack_version_matches or current != pack.official_client_sha256:
         return Inspection(InstallStatus.UNSUPPORTED_VANILLA, root, client,

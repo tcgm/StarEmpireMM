@@ -261,6 +261,17 @@ class ModPackageTests(unittest.TestCase):
                 with self.assertRaisesRegex(PackageError, "Manager|manager"):
                     verify_mod_package(package, {"test-key": self.public})
 
+    def test_legacy_loader_capability_is_independent_of_public_version(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            package = self._package(
+                Path(temporary),
+                mutate_manifest=lambda manifest: manifest.__setitem__(
+                    "manager_version_min", "0.4.6"))
+
+            verified = verify_mod_package(package, {"test-key": self.public})
+
+        self.assertEqual("ui-test-1", verified.compatibility.pack_id)
+
     def test_valid_dynamic_package_authenticates_its_closed_profile(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -24,7 +24,8 @@ from .hook_recipe import HookRecipeError, parse_hook_recipe
 from .release_profiles import (ReleaseBinding, ReleaseProfile,
                                ReleaseProfileError, parse_release_binding,
                                profile_from_signed_binding)
-from .version import MANAGER_VERSION, version_tuple
+from .version import (MANAGER_VERSION, package_requirement_version,
+                      version_tuple)
 
 
 PACKAGE_SCHEMA = 1
@@ -246,7 +247,8 @@ def verify_mod_package(path: Path,
         if any(not str(manifest.get(key, "")).strip() for key in required_text):
             raise PackageError("manifest compatibility metadata is incomplete")
         try:
-            required_manager = version_tuple(str(manifest["manager_version_min"]))
+            required_manager = version_tuple(package_requirement_version(
+                str(manifest["manager_version_min"])))
             running_manager = version_tuple(MANAGER_VERSION)
         except ValueError as error:
             raise PackageError("manifest manager version is invalid") from error
