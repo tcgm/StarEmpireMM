@@ -318,18 +318,21 @@ def manager_internal_loader_root() -> Path:
 def discover_local_loader(
         game_root: Path, state_path: Path, bundle_root: Path,
         trusted_keys, *,
-        allow_compatibility_fallback: bool = False) -> VerifiedModPackage | None:
+        allow_compatibility_fallback: bool = False,
+        strict_internal_inventory: bool = False) -> VerifiedModPackage | None:
     """Find authenticated internal compatibility support for a game build."""
     identity = detect_game_build_identity(game_root, state_path)
     root = Path(bundle_root).expanduser().resolve()
     packages: dict[str, VerifiedModPackage] = {}
     exact_matches: dict[str, VerifiedModPackage] = {}
+    invalid_packages: list[tuple[Path, Exception]] = []
     for pattern in ("*.seloader", "*.seuimod"):
         for candidate in sorted(root.glob(pattern)):
             try:
                 package = verify_mod_package(candidate, trusted_keys)
                 compatibility = package.compatibility
-            except (PackageError, ManagerDataError, OSError):
+            except (PackageError, ManagerDataError, OSError) as error:
+                invalid_packages.append((candidate, error))
                 continue
             packages.setdefault(package.manifest_sha256, package)
             if (compatibility.game_version != identity.game_version
@@ -337,6 +340,11 @@ def discover_local_loader(
                     != identity.official_client_sha256):
                 continue
             exact_matches.setdefault(package.manifest_sha256, package)
+    if strict_internal_inventory and invalid_packages:
+        candidate, error = invalid_packages[0]
+        raise PackageError(
+            "the bundled compatibility template could not be verified "
+            f"({candidate.name}): {error}")
     if len(exact_matches) > 1:
         raise PackageError(
             "multiple distinct signed compatibility bindings match this game build")
@@ -1360,7 +1368,8 @@ class ManagerApp:
             if internal_root.is_dir():
                 package = discover_local_loader(
                     game_root, self._state_path, internal_root, keys,
-                    allow_compatibility_fallback=True)
+                    allow_compatibility_fallback=True,
+                    strict_internal_inventory=True)
             if package is None:
                 package = discover_local_loader(
                     game_root, self._state_path, manager_bundle_root(), keys)

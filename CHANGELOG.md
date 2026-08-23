@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4
+
+- Official game updates are handled automatically when mod support is next
+  enabled. The Manager verifies every required loader hook against the updated
+  client, saves a fresh vanilla backup, and installs only after the isolated
+  rebuild passes.
+- Public release numbering is now separate from the older private loader
+  capability number, so the Manager no longer rejects its own valid bundled
+  compatibility template.
+- If bundled compatibility support is missing or damaged, the Manager asks for
+  a Manager update instead of asking players to select internal packages.
+
 ## v0.3
 
 - The Mods list now notices changes to the loader registry while the Manager

@@ -424,6 +424,25 @@ class ManagerUiStateTests(unittest.TestCase):
                         root / "game", root / "state.json", root,
                         {"key": b"K"}, allow_compatibility_fallback=True)
 
+    def test_invalid_bundled_template_is_not_silently_ignored(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = root / "internal.seloader"
+            package.write_bytes(b"broken")
+            identity = SimpleNamespace(
+                game_version="0.4.67", official_client_sha256="A" * 64)
+
+            with patch("installer.manager_ui.detect_game_build_identity",
+                       return_value=identity), patch(
+                    "installer.manager_ui.verify_mod_package",
+                    side_effect=PackageError("requires a newer Manager")):
+                with self.assertRaisesRegex(
+                        PackageError, "bundled compatibility template"):
+                    discover_local_loader(
+                        root / "game", root / "state.json", root,
+                        {"key": b"K"}, allow_compatibility_fallback=True,
+                        strict_internal_inventory=True)
+
     def test_frozen_internal_loader_root_is_private_extraction_folder(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
                 __import__("installer.manager_ui", fromlist=["sys"]).sys,
@@ -899,6 +918,62 @@ class ManagerUiStateTests(unittest.TestCase):
         progress.complete.assert_called_once_with(
             "Mod support is enabled and ready for Star Empire.")
         progress.fail.assert_not_called()
+
+    def test_game_update_automatically_rebases_bundled_loader(self) -> None:
+        app = object.__new__(ManagerApp)
+        game = Path("C:/Star Empire")
+        package = SimpleNamespace(
+            manifest={"schema": 2},
+            release_profile=object(),
+            release_binding=SimpleNamespace(
+                ui_source_sha256={"host_client.py": "A" * 64}))
+        inspection = SimpleNamespace(
+            status=InstallStatus.UNSUPPORTED_VANILLA,
+            can_install=False, can_update=False,
+            game_root=game, version="0.4.67", current_sha256="B" * 64,
+            pack=object(), state=SimpleNamespace(original_client=Path("old")),
+            message="game update requires structural verification")
+        final = SimpleNamespace(
+            status=InstallStatus.INSTALLED_HEALTHY, can_update=False)
+        app.root = object()
+        app.game_path = SimpleNamespace(get=lambda: str(game))
+        app._package = None
+        app._inspection = None
+        app._work_root = Path("C:/Manager/work")
+        app._recover_interrupted_automatically = unittest.mock.Mock(
+            return_value=True)
+        transaction = unittest.mock.Mock()
+        app._transaction = transaction
+
+        def select_loader(selected_game):
+            self.assertEqual(game, selected_game)
+            app._package = package
+            return True
+
+        app._auto_select_local_loader = unittest.mock.Mock(
+            side_effect=select_loader)
+
+        def refresh():
+            app._inspection = (
+                final if transaction.install_or_update.called else inspection)
+
+        app.refresh = refresh
+        candidate = object()
+        progress = unittest.mock.Mock()
+        with patch(
+                "installer.manager_ui.SetupProgressDialog",
+                return_value=progress), patch(
+                "installer.manager_ui.build_candidate",
+                return_value=candidate) as build:
+            self.assertTrue(app._prepare_game_for_mod_install())
+
+        app._auto_select_local_loader.assert_called_once_with(game)
+        build.assert_called_once_with(
+            package, game, app._work_root,
+            baseline_client=None, compatibility_test=True)
+        transaction.install_or_update.assert_called_once_with(
+            inspection, candidate)
+        progress.complete.assert_called_once()
 
     def test_automatic_setup_progress_explains_safe_failure(self) -> None:
         app = object.__new__(ManagerApp)
