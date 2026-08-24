@@ -309,11 +309,19 @@ def _is_managed_turret_layout_queue(node: ast.AST) -> bool:
             or len(call.args) != 3 or call.keywords):
         return False
     label, active, draw = call.args
+    active_value = active
+    if isinstance(active, ast.Lambda):
+        arguments = active.args
+        if (arguments.posonlyargs or arguments.args or arguments.vararg
+                or arguments.kwonlyargs or arguments.kwarg
+                or arguments.defaults or arguments.kw_defaults):
+            return False
+        active_value = active.body
     if (not isinstance(label, ast.Constant) or label.value != "turret_layout"
-            or not isinstance(active, ast.Attribute)
-            or not isinstance(active.value, ast.Name)
-            or active.value.id != "self"
-            or active.attr != "_turret_layout_open"
+            or not isinstance(active_value, ast.Attribute)
+            or not isinstance(active_value.value, ast.Name)
+            or active_value.value.id != "self"
+            or active_value.attr != "_turret_layout_open"
             or not isinstance(draw, ast.Lambda)
             or not isinstance(draw.body, ast.Call)):
         return False
