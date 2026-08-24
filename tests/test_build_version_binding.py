@@ -81,6 +81,14 @@ def _managed_client_source(newline: str = "\n") -> bytes:
     return text.replace("\n", newline).encode("utf-8")
 
 
+def _managed_lambda_active_client_source(newline: str = "\n") -> bytes:
+    text = _managed_client_source().decode("utf-8").replace(
+        '"turret_layout", self._turret_layout_open,\n',
+        '"turret_layout", lambda: self._turret_layout_open,\n',
+    )
+    return text.replace("\n", newline).encode("utf-8")
+
+
 def _render_source(newline: str = "\n") -> bytes:
     text = """\
 class RenderMixin:
@@ -270,27 +278,50 @@ def unrelated(self):
                           for item in FULL_UI_POLICY.fragment_ids))
 
     def test_managed_turret_queue_is_the_foreground_boundary(self):
-        for newline in ("\n", "\r\n"):
-            with self.subTest(newline=repr(newline)):
-                source = _managed_client_source(newline)
-                boundary = source.index(
-                    ("            _queue_modal(" + newline).encode("utf-8"))
-                target_offsets = locate_target_vitals_offsets(
-                    source, TARGET_VITALS_ALPHA_POLICY)
-                full_offsets = locate_release_offsets(source, FULL_UI_POLICY)
-                loader_offsets = locate_release_offsets(
-                    source, MOD_LOADER_POLICY)
-                self.assertEqual(
-                    boundary,
-                    tuple(target_offsets[item] for item in
-                          TARGET_VITALS_ALPHA_POLICY.fragment_ids)[2])
-                self.assertEqual(
-                    boundary,
-                    tuple(full_offsets[item]
-                          for item in FULL_UI_POLICY.fragment_ids)[3])
-                self.assertEqual(
-                    boundary,
-                    loader_offsets[CLIENT_MOD_LOADER_OVERLAY_V1])
+        for active_form, factory in (
+                ("direct", _managed_client_source),
+                ("lambda", _managed_lambda_active_client_source)):
+            for newline in ("\n", "\r\n"):
+                with self.subTest(
+                        active_form=active_form, newline=repr(newline)):
+                    source = factory(newline)
+                    boundary = source.index(
+                        ("            _queue_modal(" + newline).encode("utf-8"))
+                    target_offsets = locate_target_vitals_offsets(
+                        source, TARGET_VITALS_ALPHA_POLICY)
+                    full_offsets = locate_release_offsets(source, FULL_UI_POLICY)
+                    loader_offsets = locate_release_offsets(
+                        source, MOD_LOADER_POLICY)
+                    self.assertEqual(
+                        boundary,
+                        tuple(target_offsets[item] for item in
+                              TARGET_VITALS_ALPHA_POLICY.fragment_ids)[2])
+                    self.assertEqual(
+                        boundary,
+                        tuple(full_offsets[item]
+                              for item in FULL_UI_POLICY.fragment_ids)[3])
+                    self.assertEqual(
+                        boundary,
+                        loader_offsets[CLIENT_MOD_LOADER_OVERLAY_V1])
+
+    def test_managed_turret_active_lambda_must_be_exact_and_zero_argument(self):
+        source = _managed_lambda_active_client_source()
+        cases = (
+            source.replace(
+                b"lambda: self._turret_layout_open",
+                b"lambda value: self._turret_layout_open"),
+            source.replace(
+                b"lambda: self._turret_layout_open",
+                b"lambda: self._other_window_open"),
+            source.replace(
+                b"lambda: self._turret_layout_open",
+                b"lambda: bool(self._turret_layout_open)"),
+        )
+        for candidate in cases:
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(
+                    VersionBindingError, "missing or ambiguous"):
+                locate_target_vitals_offsets(
+                    candidate, TARGET_VITALS_ALPHA_POLICY)
 
     def test_missing_or_ambiguous_semantic_anchor_fails_closed(self):
         missing = _client_source().replace(

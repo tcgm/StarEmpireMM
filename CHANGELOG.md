@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5
+
+- Star Empire 0.4.73 is supported. The Manager recognises the updated
+  turret-layout modal boundary while keeping its exact-match safety checks.
+- Invalid, altered, or duplicate turret-layout boundaries still stop automatic
+  setup instead of allowing the Manager to guess.
+
 ## v0.4
 
 - Official game updates are handled automatically when mod support is next
