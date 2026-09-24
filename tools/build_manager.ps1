@@ -5,6 +5,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$pyVersion = & py -c "import sys; print('.'.join(map(str, sys.version_info[:3])))"
+$pyExecutable = & py -c "import sys; print(sys.executable)"
+Write-Host "Building with: py -> Python $pyVersion ($pyExecutable)"
 $repository = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $managerRoot = (Resolve-Path (Join-Path $repository "..")).Path
 $stamp = Get-Date -Format "yyyyMMdd.HHmmss"
@@ -25,6 +28,25 @@ if (Test-Path -LiteralPath $output) {
 $dist = Join-Path $output "dist"
 $work = Join-Path $output "work"
 New-Item -ItemType Directory -Path $dist, $work -Force | Out-Null
+
+if ($EmbeddedLoaderPackages.Count -eq 0) {
+    $defaultLoaderDir = Join-Path $repository ".private-release"
+    if (Test-Path -LiteralPath $defaultLoaderDir) {
+        $discovered = Get-ChildItem -LiteralPath $defaultLoaderDir -Filter "*.seloader" -File -ErrorAction SilentlyContinue
+        if ($discovered) {
+            $EmbeddedLoaderPackages = @($discovered | ForEach-Object { $_.FullName })
+            Write-Host ("No -EmbeddedLoaderPackages given; auto-discovered " `
+                + "$($EmbeddedLoaderPackages.Count) package(s) in $defaultLoaderDir")
+        }
+    }
+}
+if ($EmbeddedLoaderPackages.Count -eq 0) {
+    Write-Warning ("Building with NO embedded compatibility template (.seloader). " `
+        + "This Manager build will refuse to install or update mod support for ANY " `
+        + "game version until a template is embedded. Pass -EmbeddedLoaderPackages, " `
+        + "or place a .seloader file under $(Join-Path $repository '.private-release') " `
+        + "to have it picked up automatically. See docs/DEVELOPMENT.md.")
+}
 
 $spec = Join-Path $repository "installer\StarEmpireUiModManager.spec"
 $embedded = @()
@@ -48,7 +70,7 @@ try {
         $environmentName,
         ($embedded -join [System.IO.Path]::PathSeparator),
         "Process")
-    & python -m PyInstaller --noconfirm --clean --distpath $dist --workpath $work $spec
+    & py -m PyInstaller --noconfirm --clean --distpath $dist --workpath $work $spec
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller Manager build failed with exit code $LASTEXITCODE"
     }
@@ -113,7 +135,7 @@ $releaseLedger = [ordered]@{
 }
 $releaseLedgerPath = Join-Path $dist "RELEASE.json"
 $releaseLedger | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $releaseLedgerPath -Encoding utf8
-& python -m tools.audit_manager_artifact --manager $manager
+& py -m tools.audit_manager_artifact --manager $manager
 if ($LASTEXITCODE -ne 0) {
     throw "Manager artifact audit failed with exit code $LASTEXITCODE"
 }

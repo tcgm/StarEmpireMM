@@ -461,7 +461,7 @@ class SetupProgressDialog:
         self.window.geometry("640x390")
         self.window.minsize(540, 330)
         self.window.transient(root)
-        self.window.protocol("WM_DELETE_WINDOW", lambda: None)
+        self.window.protocol("WM_DELETE_WINDOW", self.close)
         self.status = StringVar(value="Starting automatic setup…")
         self._finished = False
         self._step = 0
@@ -557,6 +557,7 @@ class ManagerApp:
         self.status_text = StringVar(
             value="Choose a game folder; its signed loader is detected automatically.")
         self.summary_text = StringVar(value="No inspection has been run.")
+        self.template_text = StringVar(value="")
         self.manager_hint = StringVar(
             value="Choose the Star Empire folder, then click once to enable mods.")
         self._package: VerifiedModPackage | None = None
@@ -793,6 +794,8 @@ class ManagerApp:
                   font=("Segoe UI", 11, "bold"), wraplength=720).pack(anchor="w")
         ttk.Label(status, textvariable=self.summary_text,
                   wraplength=720).pack(anchor="w", pady=(8, 0))
+        ttk.Label(status, textvariable=self.template_text,
+                  wraplength=720).pack(anchor="w", pady=(4, 0))
 
         actions = ttk.Frame(dashboard)
         actions.pack(fill="x")
@@ -1618,6 +1621,7 @@ class ManagerApp:
         if not self.game_path.get().strip():
             self.status_text.set("Choose a game folder to begin.")
             self.summary_text.set("No game path selected.")
+            self.template_text.set("")
             self._inspection = None
             self._set_actions()
             self._refresh_mods()
@@ -1638,6 +1642,16 @@ class ManagerApp:
                 + " You may run an isolated compatibility test; it will stop "
                   "before installation if the reviewed UI hooks cannot be "
                   "located and compiled safely.")
+        detected_version = self._inspection.version or "unknown"
+        if pack is None:
+            self.template_text.set(
+                f"Compatibility template: none embedded in this Manager build  "
+                f"|  Detected game version: {detected_version}")
+        else:
+            self.template_text.set(
+                f"Compatibility template: game {pack.game_version} "
+                f"(loader {pack.mod_version})  |  Detected game version: "
+                f"{detected_version}")
         self._set_actions()
         self._refresh_mods()
 

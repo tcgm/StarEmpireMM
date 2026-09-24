@@ -14,6 +14,7 @@ logs/
 temp/
 *.semod
 *.seloader
+.private-release/
 *.exe
 *.log
 *.key

@@ -11,7 +11,7 @@ import sys
 
 
 # Public release version. Keep this aligned with the GitHub release tag.
-MANAGER_VERSION = "0.5"
+MANAGER_VERSION = "0.6"
 
 # Loader packages created before public version alignment wrote the old
 # implementation number into ``manager_version_min``. Translate that historical

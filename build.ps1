@@ -7,11 +7,14 @@ param(
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
-foreach ($package in @("pyinstaller", "tkinterdnd2")) {
-    cmd /c "python -m pip show $package >nul 2>nul"
+$pyVersion = & py -c "import sys; print('.'.join(map(str, sys.version_info[:3])))"
+Write-Host "Building with: py -> Python $pyVersion ($((& py -c 'import sys; print(sys.executable)')))"
+
+foreach ($package in @("pyinstaller", "tkinterdnd2", "cryptography")) {
+    cmd /c "py -m pip show $package >nul 2>nul"
     if ($LASTEXITCODE -ne 0) {
         Write-Host "$package not found; installing it..."
-        python -m pip install $package
+        py -m pip install $package
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to install $package"
         }

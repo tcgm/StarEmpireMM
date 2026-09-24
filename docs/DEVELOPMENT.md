@@ -16,6 +16,14 @@ powershell -ExecutionPolicy Bypass -File tools\build_manager.ps1 `
   -EmbeddedLoaderPackages G:\private\release\current.seloader
 ```
 
+If `-EmbeddedLoaderPackages` is omitted, the build script auto-discovers every
+`*.seloader` file under `.private-release\` (gitignored, repository-local) and
+embeds those instead. A build with zero embedded packages still succeeds, but
+its Manager can never install or update mod support for any game version — the
+script prints a loud warning when that happens. Keep a copy of the current
+signed `.seloader` in `.private-release\` so an ordinary `build`/`build.ps1`
+run without flags still produces a usable Manager.
+
 The internal loader package is version-specific release infrastructure. Keep its private signing material and authorised compatibility workspace outside Git. Never copy an installed game, `Client.exe`, extracted official modules, private diffs, player data, logs or credentials into the public tree.
 
 Before a release:
