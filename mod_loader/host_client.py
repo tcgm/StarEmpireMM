@@ -93,11 +93,16 @@ def configure_mod_logging(state_root: Path) -> Path:
     if settings_path.is_file():
         try:
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
-            debug_logging = bool(
+            valid_schema = (
                 type(settings) is dict
-                and set(settings) == {"schema", "debug_logging"}
-                and settings.get("schema") == 1
-                and settings.get("debug_logging") is True)
+                and (
+                    (settings.get("schema") == 1
+                     and set(settings) == {"schema", "debug_logging"})
+                    or (settings.get("schema") == 2
+                        and set(settings) == {
+                            "schema", "debug_logging", "dark_mode"})))
+            debug_logging = bool(
+                valid_schema and settings.get("debug_logging") is True)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             logger.warning(
                 "STAR_EMPIRE_MOD_SETTINGS_INVALID; using normal logging")

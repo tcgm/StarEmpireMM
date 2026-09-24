@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path, PurePosixPath
 from queue import Empty, SimpleQueue
+import subprocess
 import sys
 from threading import Thread
 from tkinter import (BOTH, DISABLED, END, LEFT, NORMAL, RIGHT, BooleanVar,
@@ -23,6 +24,7 @@ from .manager_core import (
     CLIENT_EXE,
     Inspection,
     InstallStatus,
+    LAUNCHER_EXE,
     ManagerDataError,
     default_state_path,
     inspect_installation,
@@ -57,6 +59,27 @@ from .update_feed import (
 from .version import runtime_identity
 from .windows_drop import (create_drop_root, install_windows_file_drop,
                            unique_semod_paths)
+
+
+LIGHT_PALETTE = {
+    "bg": "#f0f0f0", "fg": "#1a1a1a", "field_bg": "#ffffff",
+    "select_bg": "#0a5fd1", "select_fg": "#ffffff",
+    "border": "#c9c9c9", "trough": "#d9d9d9",
+}
+DARK_PALETTE = {
+    "bg": "#1e1f22", "fg": "#e6e6e6", "field_bg": "#2b2d31",
+    "select_bg": "#3a6df0", "select_fg": "#ffffff",
+    "border": "#3a3b3e", "trough": "#3a3b3e",
+}
+
+
+def _theme_text_widget(widget: Text, palette: dict[str, str]) -> None:
+    """Colour a plain tk Text widget to match the current ttk palette."""
+    widget.configure(
+        background=palette["field_bg"], foreground=palette["fg"],
+        insertbackground=palette["fg"],
+        selectbackground=palette["select_bg"],
+        selectforeground=palette["select_fg"])
 
 
 SELECTED_GAME_FILENAME = "selected-game.txt"
@@ -432,7 +455,7 @@ def selected_game_matches_inspection(
 class SetupProgressDialog:
     """Small player-facing record of an automatic compatibility operation."""
 
-    def __init__(self, root: Tk) -> None:
+    def __init__(self, root: Tk, palette: dict[str, str] = LIGHT_PALETTE) -> None:
         self.window = Toplevel(root)
         self.window.title("Preparing Star Empire for mods")
         self.window.geometry("640x390")
@@ -459,6 +482,7 @@ class SetupProgressDialog:
             outer, wrap="word", state=DISABLED, undo=False,
             font=("Segoe UI", 10), padx=10, pady=10, height=12,
         )
+        _theme_text_widget(self.log, palette)
         self.log.pack(fill=BOTH, expand=True)
         self.close_button = ttk.Button(
             outer, text="Close", state=DISABLED, command=self.close)
@@ -550,10 +574,12 @@ class ManagerApp:
         except ManagerSettingsError:
             settings = ManagerSettings()
         self.debug_logging = BooleanVar(value=settings.debug_logging)
+        self.dark_mode = BooleanVar(value=settings.dark_mode)
         self.force_load_mod = BooleanVar(value=False)
         self.mod_compatibility_text = StringVar(
             value="Compatibility: select a mod")
         self._saved_debug_logging = settings.debug_logging
+        self._saved_dark_mode = settings.dark_mode
         self._update_results = SimpleQueue()
         self._mod_update_results = SimpleQueue()
         self._mod_update_active = False
@@ -575,7 +601,9 @@ class ManagerApp:
                 remembered_game = remembered_state.game_root
         if remembered_game is not None and remembered_game.is_dir():
             self.game_path.set(str(remembered_game))
+        self._style = ttk.Style(self.root)
         self._build_ui()
+        self._apply_theme(self.dark_mode.get())
         self.root.protocol("WM_DELETE_WINDOW", self._close_manager)
         self.root.bind(
             "<FocusIn>", self._refresh_mods_if_registry_changed, add="+")
@@ -598,6 +626,92 @@ class ManagerApp:
         except (CandidateBuildError, OSError) as error:
             return str(error)
         return None
+
+    def _apply_theme(self, dark: bool) -> None:
+        """Recolour the whole window; ttk styles are shared by every tab."""
+        palette = DARK_PALETTE if dark else LIGHT_PALETTE
+        style = self._style
+        style.theme_use("clam")
+        style.configure(
+            ".", background=palette["bg"], foreground=palette["fg"],
+            fieldbackground=palette["field_bg"])
+        for name in (
+                "TFrame", "TLabel", "TLabelframe", "TLabelframe.Label",
+                "TCheckbutton", "TPanedwindow", "TNotebook"):
+            style.configure(name, background=palette["bg"], foreground=palette["fg"])
+        style.map(
+            "TCheckbutton",
+            background=[("active", palette["bg"])],
+            foreground=[("active", palette["fg"])])
+        style.configure(
+            "TButton", background=palette["field_bg"], foreground=palette["fg"])
+        style.map(
+            "TButton",
+            background=[("active", palette["border"]), ("disabled", palette["bg"])])
+        style.configure(
+            "TEntry", fieldbackground=palette["field_bg"],
+            foreground=palette["fg"], insertcolor=palette["fg"])
+        style.configure(
+            "TNotebook.Tab", background=palette["field_bg"],
+            foreground=palette["fg"])
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", palette["bg"])],
+            foreground=[("selected", palette["fg"])])
+        style.configure(
+            "Treeview", background=palette["field_bg"],
+            fieldbackground=palette["field_bg"], foreground=palette["fg"])
+        style.map(
+            "Treeview",
+            background=[("selected", palette["select_bg"])],
+            foreground=[("selected", palette["select_fg"])])
+        style.configure(
+            "Treeview.Heading", background=palette["border"],
+            foreground=palette["fg"])
+        style.configure(
+            "TScrollbar", background=palette["field_bg"],
+            troughcolor=palette["trough"])
+        style.configure(
+            "TProgressbar", background=palette["select_bg"],
+            troughcolor=palette["trough"])
+        style.configure("TSeparator", background=palette["border"])
+        self.root.configure(background=palette["bg"])
+        for widget in (
+                getattr(self, "log_text", None),
+                getattr(self, "mod_readme_text", None)):
+            if widget is not None:
+                _theme_text_widget(widget, palette)
+
+    def _toggle_dark_mode(self) -> None:
+        self._apply_theme(bool(self.dark_mode.get()))
+        self._save_manager_settings()
+
+    def _launch_game(self) -> None:
+        selected = self.game_path.get().strip()
+        if not selected:
+            messagebox.showerror(
+                "Cannot launch Star Empire", "Choose a game folder first.")
+            return
+        root = Path(selected).expanduser().resolve()
+        launcher = root / LAUNCHER_EXE
+        if not launcher.is_file():
+            messagebox.showerror(
+                "Cannot launch Star Empire",
+                f"{LAUNCHER_EXE} was not found in {root}.")
+            return
+        processes = running_game_processes()
+        if processes.verified and processes.names and not messagebox.askyesno(
+                "Star Empire may already be running",
+                "Star Empire or its launcher appears to already be running. "
+                "Launch it again anyway?"):
+            return
+        try:
+            subprocess.Popen([str(launcher)], cwd=str(root))
+        except OSError as error:
+            messagebox.showerror("Cannot launch Star Empire", str(error))
+            return
+        self.status_text.set("STAR EMPIRE LAUNCHED")
+        self.summary_text.set(f"Started {LAUNCHER_EXE} from {root}.")
 
     def _close_manager(self) -> None:
         if self._mod_registry_watch_id is not None:
@@ -634,6 +748,9 @@ class ManagerApp:
         ttk.Button(
             game_bar, text="Change…", command=self._choose_game
         ).pack(side=RIGHT, padx=(8, 0))
+        self.launch_button = ttk.Button(
+            game_bar, text="Launch Star Empire", command=self._launch_game)
+        self.launch_button.pack(side=RIGHT, padx=(8, 0))
 
         status_bar = ttk.Frame(outer, padding=(0, 4))
         status_bar.pack(fill="x", pady=(0, 8))
@@ -856,6 +973,11 @@ class ManagerApp:
             text=("Verbose logging takes effect the next time Star Empire "
                   "starts and may create larger rotating log files."),
         ).pack(anchor="w")
+        ttk.Checkbutton(
+            settings, text="Dark mode",
+            variable=self.dark_mode,
+            command=self._toggle_dark_mode,
+        ).pack(anchor="w", pady=(14, 2))
         self._refresh_mods()
         self._diagnostics(select_tab=False)
 
@@ -1089,7 +1211,11 @@ class ManagerApp:
             messagebox.showerror(
                 "Game setup blocked", inspection.message)
             return False
-        progress = SetupProgressDialog(self.root)
+        dark_mode = getattr(self, "dark_mode", None)
+        progress = SetupProgressDialog(
+            self.root,
+            DARK_PALETTE if dark_mode is not None and dark_mode.get()
+            else LIGHT_PALETTE)
         progress.step(
             "Checking the selected Star Empire build",
             f"Detected game version {inspection.version or 'unknown'}.")
@@ -1791,16 +1917,21 @@ class ManagerApp:
                 f"Diagnostic report written to:\n{output}")
 
     def _save_manager_settings(self) -> None:
-        requested = bool(self.debug_logging.get())
+        requested_debug = bool(self.debug_logging.get())
+        requested_dark = bool(self.dark_mode.get())
         try:
             save_manager_settings(
                 self._settings_path,
-                ManagerSettings(debug_logging=requested))
+                ManagerSettings(
+                    debug_logging=requested_debug, dark_mode=requested_dark))
         except (ManagerSettingsError, OSError) as error:
             self.debug_logging.set(self._saved_debug_logging)
+            self.dark_mode.set(self._saved_dark_mode)
+            self._apply_theme(self._saved_dark_mode)
             messagebox.showerror("Settings not saved", str(error))
         else:
-            self._saved_debug_logging = requested
+            self._saved_debug_logging = requested_debug
+            self._saved_dark_mode = requested_dark
 
 
 def main() -> None:

@@ -1110,11 +1110,16 @@ class ManagerUiStateTests(unittest.TestCase):
         app = object.__new__(ManagerApp)
         app._settings_path = Path("manager-settings.json")
         app._saved_debug_logging = False
+        app._saved_dark_mode = False
         app.debug_logging = SimpleNamespace(
             get=lambda: True, set=unittest.mock.Mock())
+        app.dark_mode = SimpleNamespace(
+            get=lambda: False, set=unittest.mock.Mock())
+        app._apply_theme = unittest.mock.Mock()
         with patch("installer.manager_ui.save_manager_settings") as save:
             app._save_manager_settings()
         self.assertTrue(save.call_args.args[1].debug_logging)
+        self.assertFalse(save.call_args.args[1].dark_mode)
         self.assertTrue(app._saved_debug_logging)
 
         app._saved_debug_logging = False
@@ -1124,6 +1129,7 @@ class ManagerUiStateTests(unittest.TestCase):
                 "installer.manager_ui.messagebox.showerror") as error:
             app._save_manager_settings()
         app.debug_logging.set.assert_called_once_with(False)
+        app.dark_mode.set.assert_called_once_with(False)
         error.assert_called_once()
 
     def test_registry_change_refreshes_visible_mod_list(self):

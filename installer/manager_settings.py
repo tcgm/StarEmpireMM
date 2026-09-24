@@ -19,9 +19,14 @@ class ManagerSettingsError(ValueError):
 @dataclass(frozen=True)
 class ManagerSettings:
     debug_logging: bool = False
+    dark_mode: bool = False
 
     def to_mapping(self) -> dict[str, object]:
-        return {"schema": 1, "debug_logging": self.debug_logging}
+        return {
+            "schema": 2,
+            "debug_logging": self.debug_logging,
+            "dark_mode": self.dark_mode,
+        }
 
 
 def _unique_object(pairs):
@@ -47,12 +52,20 @@ def load_manager_settings(path: Path) -> ManagerSettings:
         raise
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ManagerSettingsError("Manager settings are not valid UTF-8 JSON") from error
-    if (type(raw) is not dict
-            or set(raw) != {"schema", "debug_logging"}
-            or raw["schema"] != 1
-            or type(raw["debug_logging"]) is not bool):
+    if type(raw) is not dict or type(raw.get("schema")) is not int:
         raise ManagerSettingsError("Manager settings have an unsupported schema")
-    return ManagerSettings(debug_logging=raw["debug_logging"])
+    schema = raw["schema"]
+    if (schema == 1
+            and set(raw) == {"schema", "debug_logging"}
+            and type(raw["debug_logging"]) is bool):
+        return ManagerSettings(debug_logging=raw["debug_logging"])
+    if (schema == 2
+            and set(raw) == {"schema", "debug_logging", "dark_mode"}
+            and type(raw["debug_logging"]) is bool
+            and type(raw["dark_mode"]) is bool):
+        return ManagerSettings(
+            debug_logging=raw["debug_logging"], dark_mode=raw["dark_mode"])
+    raise ManagerSettingsError("Manager settings have an unsupported schema")
 
 
 def save_manager_settings(path: Path, settings: ManagerSettings) -> Path:
