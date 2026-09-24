@@ -919,7 +919,7 @@ class ManagerApp:
             command=self._check_selected_mod_update)
         self.mod_update_button.pack(side=LEFT, padx=(0, 8))
         ttk.Button(
-            mod_actions, text="Refresh", command=self._refresh_mods
+            mod_actions, text="Refresh", command=self.refresh
         ).pack(side=RIGHT)
 
         ttk.Label(
