@@ -206,11 +206,12 @@ class ModService:
 
     def install(
             self, package: VerifiedSemodPackage, *, source: str,
-            enable: bool = True) -> ModMutationResult:
+            enable: bool = True, require_closed: bool = True) -> ModMutationResult:
         if not isinstance(package, VerifiedSemodPackage):
             raise ModServiceError("install requires a verified .semod package")
         with self._exclusive():
-            self._require_game_closed()
+            if require_closed:
+                self._require_game_closed()
             registry = self.registry()
             existing = registry.by_id().get(package.manifest.mod_id)
             target = self._install_target(package)

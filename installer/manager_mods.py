@@ -75,12 +75,13 @@ class ModManagerController:
 
     def install(
             self, package_path: Path, *, enable: bool = False,
-            source: str | None = None,
+            source: str | None = None, require_closed: bool = True,
     ) -> ModMutationResult:
         package = self.verify(package_path)
         source_text = source or f"local:{Path(package_path).name}"
         return self.service.install(
-            package, source=source_text, enable=enable)
+            package, source=source_text, enable=enable,
+            require_closed=require_closed)
 
     def check_update(self, mod_id: str) -> AcquiredModUpdate | None:
         installed = self.service.registry().installed(mod_id)

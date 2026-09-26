@@ -19,7 +19,13 @@ SEMOD_FORMAT = "star-empire-mod-package"
 SEMOD_SCHEMA = 2
 MAX_ENTRIES = 2048
 MAX_FILE_SIZE = 64 * 1024 * 1024
-MAX_TOTAL_SIZE = 256 * 1024 * 1024
+# Raised from 256 MiB: a mod bundling many full-resolution baked textures
+# (e.g. a real 3D mesh + texture per ship/station/asteroid sprite) easily
+# exceeds that on total uncompressed payload size alone, well before
+# hitting MAX_FILE_SIZE per entry or MAX_ENTRIES count -- this was a
+# sanity/DoS bound, not a security boundary, so it moves with real content
+# rather than forcing asset quality down to fit an arbitrary number.
+MAX_TOTAL_SIZE = 1024 * 1024 * 1024
 MAX_COMPRESSION_RATIO = 250
 FORBIDDEN_NAMES = frozenset({
     "client.py", "render_mixin.py", "hangar_inventory.py",

@@ -118,6 +118,9 @@ CLIENT_MOD_LOADER_INSTALL_V1 = (
 RENDER_MOD_LOADER_REGION_V1 = (
     "render.mod-loader.region.v1"
 )
+CLIENT_MOD_LOADER_CLICK_W2S_HOOK_V1 = (
+    "client.mod-loader.click-w2s-hook.v1"
+)
 
 
 @dataclass(frozen=True)
@@ -925,6 +928,19 @@ _FRAGMENTS = (
         ),
     ),
     AuthoredFragment(
+        CLIENT_MOD_LOADER_CLICK_W2S_HOOK_V1,
+        "Client",
+        (
+            "                        _semod_click_hook = getattr(\n"
+            "                            self, \"_star_empire_mod_click_w2s\", None)\n"
+            "                        if _semod_click_hook is not None:\n"
+            "                            return _semod_click_hook(\n"
+            "                                wx, wy,\n"
+            "                                (wx - self._cam_x) * self._zoom + _ww * 0.5,\n"
+            "                                (wy - self._cam_y) * self._zoom + _wh * 0.5)\n"
+        ),
+    ),
+    AuthoredFragment(
         CLIENT_MOD_LOADER_INSTALL_V1,
         "Client",
         (
@@ -974,6 +990,7 @@ ACTIVE_AUTHORED_FRAGMENT_IDS = frozenset({
     CLIENT_MOD_LOADER_OVERLAY_V1,
     CLIENT_MOD_LOADER_INSTALL_V1,
     RENDER_MOD_LOADER_REGION_V1,
+    CLIENT_MOD_LOADER_CLICK_W2S_HOOK_V1,
 })
 ACTIVE_AUTHORED_FRAGMENTS: Mapping[str, AuthoredFragment] = MappingProxyType({
     fragment_id: AUTHORED_FRAGMENTS[fragment_id]

@@ -342,8 +342,17 @@ def discover_local_loader(
         game_root: Path, state_path: Path, bundle_root: Path,
         trusted_keys, *,
         allow_compatibility_fallback: bool = False,
-        strict_internal_inventory: bool = False) -> VerifiedModPackage | None:
-    """Find authenticated internal compatibility support for a game build."""
+        strict_internal_inventory: bool = False,
+        allow_unsigned: bool = False) -> VerifiedModPackage | None:
+    """Find compatibility support for a game build.
+
+    ``allow_unsigned`` is the opt-in Stage-1 escape hatch (see
+    ``verify_mod_package``'s docstring): a discovered package whose signer
+    isn't trusted is normally skipped as invalid, same as a corrupt one.
+    With this on, such a package is accepted instead, flagged
+    ``insecure=True`` on the returned package -- callers must warn on that
+    before acting on it.
+    """
     identity = detect_game_build_identity(game_root, state_path)
     root = Path(bundle_root).expanduser().resolve()
     packages: dict[str, VerifiedModPackage] = {}
@@ -352,7 +361,8 @@ def discover_local_loader(
     for pattern in ("*.seloader", "*.seuimod"):
         for candidate in sorted(root.glob(pattern)):
             try:
-                package = verify_mod_package(candidate, trusted_keys)
+                package = verify_mod_package(
+                    candidate, trusted_keys, allow_unsigned=allow_unsigned)
                 compatibility = package.compatibility
             except (PackageError, ManagerDataError, OSError) as error:
                 invalid_packages.append((candidate, error))
@@ -576,11 +586,14 @@ class ManagerApp:
             settings = ManagerSettings()
         self.debug_logging = BooleanVar(value=settings.debug_logging)
         self.dark_mode = BooleanVar(value=settings.dark_mode)
+        self.allow_unsigned_loaders = BooleanVar(
+            value=settings.allow_unsigned_loaders)
         self.force_load_mod = BooleanVar(value=False)
         self.mod_compatibility_text = StringVar(
             value="Compatibility: select a mod")
         self._saved_debug_logging = settings.debug_logging
         self._saved_dark_mode = settings.dark_mode
+        self._saved_allow_unsigned_loaders = settings.allow_unsigned_loaders
         self._update_results = SimpleQueue()
         self._mod_update_results = SimpleQueue()
         self._mod_update_active = False
@@ -981,6 +994,21 @@ class ManagerApp:
             variable=self.dark_mode,
             command=self._toggle_dark_mode,
         ).pack(anchor="w", pady=(14, 2))
+        ttk.Checkbutton(
+            settings,
+            text="Allow unsigned mod-loader patches (insecure)",
+            variable=self.allow_unsigned_loaders,
+            command=self._toggle_allow_unsigned_loaders,
+        ).pack(anchor="w", pady=(14, 2))
+        ttk.Label(
+            settings, wraplength=820,
+            text=("Stage 1 (\"Prepare Game\") normally refuses a .seloader/"
+                  ".seuimod package whose signing key isn't trusted, since "
+                  "its payload is spliced directly into Client.exe. Only "
+                  "enable this for a self-signed package you wrote or fully "
+                  "trust -- the Manager will still warn per-package when "
+                  "this setting is the only reason it was accepted."),
+        ).pack(anchor="w")
         self._refresh_mods()
         self._diagnostics(select_tab=False)
 
@@ -1214,6 +1242,16 @@ class ManagerApp:
             messagebox.showerror(
                 "Game setup blocked", inspection.message)
             return False
+        if self._package is not None and getattr(self._package, "insecure", False):
+            proceed = messagebox.askyesno(
+                "Patch Client.exe with an unsigned package?",
+                f"{self._package.path.name} is not signed by a trusted "
+                "key. Continuing will splice its unverified code directly "
+                "into Client.exe.\n\n"
+                "Only continue if you built or fully trust this exact "
+                "package.")
+            if not proceed:
+                return False
         dark_mode = getattr(self, "dark_mode", None)
         progress = SetupProgressDialog(
             self.root,
@@ -1487,10 +1525,11 @@ class ManagerApp:
                 self._check_updates(automatic=True)
 
     def _auto_select_local_loader(self, game_root: Path) -> bool:
-        """Select signed compatibility support without exposing its package."""
+        """Select compatibility support without exposing its package."""
+        allow_unsigned = bool(self.allow_unsigned_loaders.get())
         try:
             keys = load_trusted_keys()
-            if not keys:
+            if not keys and not allow_unsigned:
                 return False
             package = None
             internal_root = manager_internal_loader_root()
@@ -1498,15 +1537,25 @@ class ManagerApp:
                 package = discover_local_loader(
                     game_root, self._state_path, internal_root, keys,
                     allow_compatibility_fallback=True,
-                    strict_internal_inventory=True)
+                    strict_internal_inventory=True,
+                    allow_unsigned=allow_unsigned)
             if package is None:
                 package = discover_local_loader(
-                    game_root, self._state_path, manager_bundle_root(), keys)
+                    game_root, self._state_path, manager_bundle_root(), keys,
+                    allow_unsigned=allow_unsigned)
         except (FeedError, PackageError, ManagerDataError, OSError) as error:
             messagebox.showerror("Automatic compatibility check failed", str(error))
             return False
         if package is None:
             return False
+        if package.insecure:
+            messagebox.showwarning(
+                "Unsigned mod-loader patch selected",
+                f"{package.path.name} is not signed by a trusted key. Its "
+                "structure, hashes and file inventory were checked, but "
+                "nobody has vouched for who wrote the code it will splice "
+                "into Client.exe.\n\n"
+                "Only continue if you built or fully trust this package.")
         self._package = package
         self._candidate = None
         self.pack_path.set(str(package.path))
@@ -1933,19 +1982,53 @@ class ManagerApp:
     def _save_manager_settings(self) -> None:
         requested_debug = bool(self.debug_logging.get())
         requested_dark = bool(self.dark_mode.get())
+        requested_allow_unsigned = bool(self.allow_unsigned_loaders.get())
         try:
             save_manager_settings(
                 self._settings_path,
                 ManagerSettings(
-                    debug_logging=requested_debug, dark_mode=requested_dark))
+                    debug_logging=requested_debug, dark_mode=requested_dark,
+                    allow_unsigned_loaders=requested_allow_unsigned))
         except (ManagerSettingsError, OSError) as error:
             self.debug_logging.set(self._saved_debug_logging)
             self.dark_mode.set(self._saved_dark_mode)
+            self.allow_unsigned_loaders.set(self._saved_allow_unsigned_loaders)
             self._apply_theme(self._saved_dark_mode)
             messagebox.showerror("Settings not saved", str(error))
         else:
             self._saved_debug_logging = requested_debug
             self._saved_dark_mode = requested_dark
+            self._saved_allow_unsigned_loaders = requested_allow_unsigned
+
+    def _toggle_allow_unsigned_loaders(self) -> None:
+        """Gate turning this ON with an explicit, spelled-out confirmation.
+
+        Turning it off never needs confirmation -- that only narrows what
+        the Manager will accept. Turning it on is the actual risk: it lets
+        Stage 1 splice an UNVERIFIED package's payload into Client.exe, so
+        the exact consequence is confirmed here rather than only being
+        implied by a checkbox label.
+        """
+        if self.allow_unsigned_loaders.get():
+            confirmed = messagebox.askyesno(
+                "Allow unsigned mod-loader patches?",
+                "Stage 1 (\"Prepare Game\") normally refuses any .seloader/"
+                ".seuimod package whose signing key isn't trusted, because "
+                "that package's payload gets spliced directly into your "
+                "Client.exe.\n\n"
+                "Turning this on lets the Manager accept an UNSIGNED or "
+                "untrusted-signer package instead of refusing it -- for "
+                "your own local/self-signed dev builds. Every other check "
+                "(safe paths, exact file inventory, blocked executable "
+                "content, SHA-256 integrity) still applies, but nothing "
+                "vouches for who actually wrote the code being patched in. "
+                "Only enable this for a package you wrote yourself or fully "
+                "trust.\n\n"
+                "Continue?")
+            if not confirmed:
+                self.allow_unsigned_loaders.set(False)
+                return
+        self._save_manager_settings()
 
 
 def main() -> None:

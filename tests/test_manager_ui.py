@@ -90,7 +90,7 @@ class ManagerUiStateTests(unittest.TestCase):
 
     def test_selected_game_round_trip_is_manager_owned_and_atomic(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game = root / "game"
             game.mkdir()
             selection = root / "manager-state" / "selected-game.txt"
@@ -103,7 +103,7 @@ class ManagerUiStateTests(unittest.TestCase):
 
     def test_selected_game_must_match_the_inspected_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game = root / "game"
             other = root / "other"
             game.mkdir()
@@ -162,7 +162,7 @@ class ManagerUiStateTests(unittest.TestCase):
 
     def test_audited_compatibility_candidate_enables_install_not_update(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             candidate_path = root / "Client.exe"
             candidate_path.write_bytes(b"compatibility candidate")
             pack = CompatibilityPack(
@@ -209,7 +209,7 @@ class ManagerUiStateTests(unittest.TestCase):
 
     def test_changed_path_blocks_build_and_install_before_any_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             inspected = root / "inspected"
             selected = root / "selected"
             inspected.mkdir()
@@ -322,7 +322,7 @@ class ManagerUiStateTests(unittest.TestCase):
 
     def test_build_identity_uses_verified_vanilla_backup_when_mod_is_installed(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game = root / "game"
             game.mkdir()
             (game / "version.txt").write_text("0.4.45\n", encoding="utf-8")
@@ -343,7 +343,7 @@ class ManagerUiStateTests(unittest.TestCase):
 
     def test_companion_loader_is_discovered_by_exact_build_without_picker(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             current = root / "StarEmpireModLoader-current.seloader"
             legacy_duplicate = root / "duplicate.seuimod"
             wrong = root / "wrong.seloader"
@@ -365,7 +365,7 @@ class ManagerUiStateTests(unittest.TestCase):
                     game_version="0.4.46",
                     official_client_sha256="D" * 64))
 
-            def verified(path, _keys):
+            def verified(path, _keys, allow_unsigned=False):
                 return {current: match, legacy_duplicate: duplicate,
                         wrong: mismatch}[path]
 
@@ -379,7 +379,7 @@ class ManagerUiStateTests(unittest.TestCase):
 
     def test_single_internal_binding_can_drive_guarded_compatibility_test(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             package_path = root / "internal.seloader"
             package_path.write_bytes(b"package")
             identity = SimpleNamespace(
@@ -400,7 +400,7 @@ class ManagerUiStateTests(unittest.TestCase):
 
     def test_internal_fallback_rejects_multiple_distinct_templates(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             first = root / "first.seloader"
             second = root / "second.seloader"
             first.write_bytes(b"first")
@@ -408,7 +408,7 @@ class ManagerUiStateTests(unittest.TestCase):
             identity = SimpleNamespace(
                 game_version="0.4.48", official_client_sha256="A" * 64)
 
-            def verified(path, _keys):
+            def verified(path, _keys, allow_unsigned=False):
                 return SimpleNamespace(
                     path=path, manifest_sha256=("B" if path == first else "C") * 64,
                     compatibility=SimpleNamespace(
@@ -426,7 +426,7 @@ class ManagerUiStateTests(unittest.TestCase):
 
     def test_invalid_bundled_template_is_not_silently_ignored(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             package = root / "internal.seloader"
             package.write_bytes(b"broken")
             identity = SimpleNamespace(
@@ -482,7 +482,7 @@ class ManagerUiStateTests(unittest.TestCase):
 
     def test_update_acquisition_selects_exact_build_and_rechecks_game(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game = root / "game"
             game.mkdir()
             (game / "version.txt").write_text("0.4.45\n", encoding="utf-8")
@@ -536,7 +536,7 @@ class ManagerUiStateTests(unittest.TestCase):
 
     def test_automatic_path_rejects_replayable_legacy_feed(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game = root / "game"
             game.mkdir()
             (game / "version.txt").write_text("0.4.45\n", encoding="utf-8")
@@ -1073,7 +1073,7 @@ class ManagerUiStateTests(unittest.TestCase):
 
     def test_diagnostics_export_uses_selected_game_and_shared_mod_state(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game = root / "game"
             state = root / "state"
             destination = root / "diagnostics.zip"
@@ -1111,9 +1111,12 @@ class ManagerUiStateTests(unittest.TestCase):
         app._settings_path = Path("manager-settings.json")
         app._saved_debug_logging = False
         app._saved_dark_mode = False
+        app._saved_allow_unsigned_loaders = False
         app.debug_logging = SimpleNamespace(
             get=lambda: True, set=unittest.mock.Mock())
         app.dark_mode = SimpleNamespace(
+            get=lambda: False, set=unittest.mock.Mock())
+        app.allow_unsigned_loaders = SimpleNamespace(
             get=lambda: False, set=unittest.mock.Mock())
         app._apply_theme = unittest.mock.Mock()
         with patch("installer.manager_ui.save_manager_settings") as save:

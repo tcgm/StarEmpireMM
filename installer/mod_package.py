@@ -90,7 +90,18 @@ class PayloadEntry:
 
 @dataclass(frozen=True)
 class VerifiedModPackage:
-    """An authenticated package whose complete ZIP inventory was validated."""
+    """A package whose complete ZIP inventory was validated.
+
+    ``insecure`` is True when the package's structure, hashes and every
+    other check below passed, but its ``key_id`` was NOT found in the
+    caller's trusted-keys mapping and ``verify_mod_package`` was explicitly
+    told (via ``allow_unsigned``) to accept that instead of refusing the
+    package. Nothing about the package's CONTENT was skipped -- only the
+    Ed25519 signature that proves who authored it. Callers that apply this
+    package to the game (Stage 1's ``candidate_builder``) must treat an
+    insecure package as "unverified authorship, verified structure" and the
+    UI must warn before using one.
+    """
 
     path: Path
     manifest: Mapping[str, Any]
@@ -98,6 +109,7 @@ class VerifiedModPackage:
     payloads: tuple[PayloadEntry, ...]
     release_binding: ReleaseBinding | None = None
     release_profile: ReleaseProfile | None = None
+    insecure: bool = False
 
     @property
     def compatibility(self) -> CompatibilityPack:
@@ -150,8 +162,22 @@ LOADER_PACKAGE_SUFFIXES = frozenset((".seloader", ".seuimod"))
 
 
 def verify_mod_package(path: Path,
-                       trusted_keys: Mapping[str, bytes]) -> VerifiedModPackage:
-    """Authenticate and inspect one package without extracting it."""
+                       trusted_keys: Mapping[str, bytes], *,
+                       allow_unsigned: bool = False) -> VerifiedModPackage:
+    """Authenticate and inspect one package without extracting it.
+
+    ``allow_unsigned`` is an explicit, caller-opted-in escape hatch: when a
+    package's ``key_id`` is not in ``trusted_keys``, it is normally rejected
+    outright (the only safe default -- Stage 1 splices this package's
+    payload straight into Client.exe). With ``allow_unsigned=True``, that one
+    case falls through to every other check below (structure, hashes,
+    forbidden names/suffixes, payload inventory, embedded recipe parsing)
+    instead of raising, and the result carries ``insecure=True`` so the
+    caller can still warn/gate on it. A package whose key IS trusted but
+    whose SIGNATURE fails verification is never let through by this flag --
+    that is always a hard error, unsigned or not, since a trusted key with a
+    bad signature means tampering, not merely "no one vouched for this."
+    """
     source = Path(path).expanduser().resolve()
     if (not source.is_file()
             or source.suffix.lower() not in LOADER_PACKAGE_SUFFIXES):
@@ -230,15 +256,20 @@ def verify_mod_package(path: Path,
                 raise PackageError("dynamic package release binding path is invalid")
         key_id = str(manifest.get("key_id", "")).strip()
         public_bytes = trusted_keys.get(key_id)
+        insecure = False
         if public_bytes is None:
-            raise PackageError(f"package signing key is not trusted: {key_id or '<missing>'}")
-        if len(public_bytes) != 32:
-            raise PackageError(f"trusted Ed25519 public key has invalid length: {key_id}")
-        try:
-            Ed25519PublicKey.from_public_bytes(public_bytes).verify(
-                signature_bytes, manifest_bytes)
-        except (InvalidSignature, ValueError) as error:
-            raise PackageError("package signature verification failed") from error
+            if not allow_unsigned:
+                raise PackageError(
+                    f"package signing key is not trusted: {key_id or '<missing>'}")
+            insecure = True
+        else:
+            if len(public_bytes) != 32:
+                raise PackageError(f"trusted Ed25519 public key has invalid length: {key_id}")
+            try:
+                Ed25519PublicKey.from_public_bytes(public_bytes).verify(
+                    signature_bytes, manifest_bytes)
+            except (InvalidSignature, ValueError) as error:
+                raise PackageError("package signature verification failed") from error
 
         required_text = (
             "pack_id", "mod_version", "game_version", "manager_version_min",
@@ -375,4 +406,4 @@ def verify_mod_package(path: Path,
 
         return VerifiedModPackage(
             source, manifest, _sha256(manifest_bytes), payloads,
-            release_binding, release_profile)
+            release_binding, release_profile, insecure)

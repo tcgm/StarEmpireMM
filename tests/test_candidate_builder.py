@@ -235,7 +235,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_build_is_isolated_hash_bound_and_audited(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, expected, rebuilt_source, fragment = self._setup(root)
             calls = []
 
@@ -270,7 +270,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_wrong_vanilla_or_wrong_candidate_is_removed_and_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, _expected, _source, _fragment = self._setup(root)
             (game / "Client.exe").write_bytes(b"changed")
             with self.assertRaisesRegex(CandidateBuildError, "official baseline"):
@@ -287,7 +287,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_installed_client_can_rebuild_from_its_verified_vanilla_backup(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, expected, _source, _fragment = self._setup(root)
             backup = root / "backups" / "Client.exe"
             backup.parent.mkdir()
@@ -304,7 +304,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_official_json_string_version_builds_without_quote_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, expected, _source, _fragment = self._setup(root)
             (game / "version.txt").write_text(
                 json.dumps("test") + "\n", encoding="utf-8")
@@ -319,7 +319,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_malformed_json_version_is_blocked_before_work_directory_creation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, _expected, _source, _fragment = self._setup(root)
             (game / "version.txt").write_text('"test\n', encoding="utf-8")
             with self.assertRaisesRegex(
@@ -329,7 +329,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_invalid_utf8_version_is_blocked_before_work_directory_creation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, _expected, _source, _fragment = self._setup(root)
             (game / "version.txt").write_bytes(b"\xff\xfe\x80")
 
@@ -341,7 +341,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_real_package_requires_a_known_release_profile(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, _expected, _source, _fragment = self._setup(root)
             base_manifest = {
                 "pack_id": "pack", "mod_version": "1.0",
@@ -367,7 +367,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_real_profile_enforces_inventory_recipe_and_module_order(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             official_exe = b"official exe"
             expected = b"candidate"
             official_source = b"print('game')\n"
@@ -459,7 +459,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_dynamic_profile_builds_without_compiled_version_lookup(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, expected, profile_id = self._dynamic_setup(root)
             calls = []
 
@@ -480,7 +480,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_dynamic_loader_profile_freezes_only_loader_namespace(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, expected, _profile_id = self._dynamic_setup(
                 root, policy=MOD_LOADER_POLICY)
             selected = []
@@ -508,7 +508,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_forged_dynamic_package_object_is_rejected_before_work(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, _expected, _profile_id = self._dynamic_setup(root)
             missing = VerifiedModPackage(
                 package.path, package.manifest, package.manifest_sha256,
@@ -531,7 +531,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_compatibility_test_rebases_authenticated_fragments_in_isolation(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, _expected, _profile_id = self._dynamic_setup(root)
             source = self._compatible_unknown_source()
             (game / "Client.exe").write_bytes(b"new compatible official exe")
@@ -572,7 +572,7 @@ class CandidateBuilderTests(unittest.TestCase):
 
     def test_full_ui_compatibility_test_uses_all_five_policy_fragments(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, _expected, _profile_id = self._dynamic_setup(
                 root, FULL_UI_POLICY)
             source = self._compatible_unknown_source().replace(
@@ -617,7 +617,7 @@ class CandidateBuilderTests(unittest.TestCase):
         from tools.build_version_binding import VersionBindingError
 
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game, package, _expected, _profile_id = self._dynamic_setup(root)
             (game / "Client.exe").write_bytes(b"new compatible official exe")
             (game / "version.txt").write_text('"0.4.46"\n', encoding="utf-8")

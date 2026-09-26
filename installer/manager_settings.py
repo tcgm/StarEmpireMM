@@ -20,12 +20,22 @@ class ManagerSettingsError(ValueError):
 class ManagerSettings:
     debug_logging: bool = False
     dark_mode: bool = False
+    # Opt-in escape hatch for Stage 1 ("Prepare Game"): normally a
+    # .seloader/.seuimod package whose signing key isn't in the trusted-keys
+    # store is refused outright, since Stage 1 splices its payload straight
+    # into Client.exe. With this on, verify_mod_package() is allowed to fall
+    # back to accepting an untrusted-but-structurally-valid package (see its
+    # `insecure` flag) instead of refusing it -- for local/dev/self-signed
+    # loader builds where no one has vouched for the signer. Defaults off;
+    # the UI must still warn per-package when this lets one through.
+    allow_unsigned_loaders: bool = False
 
     def to_mapping(self) -> dict[str, object]:
         return {
-            "schema": 2,
+            "schema": 3,
             "debug_logging": self.debug_logging,
             "dark_mode": self.dark_mode,
+            "allow_unsigned_loaders": self.allow_unsigned_loaders,
         }
 
 
@@ -65,6 +75,15 @@ def load_manager_settings(path: Path) -> ManagerSettings:
             and type(raw["dark_mode"]) is bool):
         return ManagerSettings(
             debug_logging=raw["debug_logging"], dark_mode=raw["dark_mode"])
+    if (schema == 3
+            and set(raw) == {"schema", "debug_logging", "dark_mode",
+                             "allow_unsigned_loaders"}
+            and type(raw["debug_logging"]) is bool
+            and type(raw["dark_mode"]) is bool
+            and type(raw["allow_unsigned_loaders"]) is bool):
+        return ManagerSettings(
+            debug_logging=raw["debug_logging"], dark_mode=raw["dark_mode"],
+            allow_unsigned_loaders=raw["allow_unsigned_loaders"])
     raise ManagerSettingsError("Manager settings have an unsupported schema")
 
 

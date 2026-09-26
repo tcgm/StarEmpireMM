@@ -100,7 +100,11 @@ def configure_mod_logging(state_root: Path) -> Path:
                      and set(settings) == {"schema", "debug_logging"})
                     or (settings.get("schema") == 2
                         and set(settings) == {
-                            "schema", "debug_logging", "dark_mode"})))
+                            "schema", "debug_logging", "dark_mode"})
+                    or (settings.get("schema") == 3
+                        and set(settings) == {
+                            "schema", "debug_logging", "dark_mode",
+                            "allow_unsigned_loaders"})))
             debug_logging = bool(
                 valid_schema and settings.get("debug_logging") is True)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):

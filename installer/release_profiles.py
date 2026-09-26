@@ -27,6 +27,7 @@ from .authored_fragments import (
     CLIENT_MOD_LOADER_EVENT_V1,
     CLIENT_MOD_LOADER_INSTALL_V1,
     CLIENT_MOD_LOADER_OVERLAY_V1,
+    CLIENT_MOD_LOADER_CLICK_W2S_HOOK_V1,
     RENDER_MOD_LOADER_REGION_V1,
     resolve_active_authored_fragment,
 )
@@ -39,6 +40,7 @@ TARGET_VITALS_ALPHA_PROFILE_ID = "target-vitals-alpha-0.4.42-v1"
 TARGET_VITALS_ALPHA_POLICY_ID = "target-vitals-alpha-v1"
 FULL_UI_POLICY_ID = "full-ui-v1"
 MOD_LOADER_POLICY_ID = "mod-loader-v1"
+MOD_LOADER_V2_POLICY_ID = "mod-loader-v2"
 BINDING_SCHEMA = 2
 LEGACY_BINDING_SCHEMA = 1
 BINDING_FORMAT = "star-empire-ui-release-binding"
@@ -372,10 +374,25 @@ MOD_LOADER_POLICY = ReleasePolicy(
     additional_hosts=(("render_mixin", "render_mixin.py"),),
 )
 
+MOD_LOADER_V2_POLICY = ReleasePolicy(
+    policy_id=MOD_LOADER_V2_POLICY_ID,
+    host_module="Client",
+    host_path="Client.py",
+    fragment_ids=(
+        *MOD_LOADER_POLICY.fragment_ids,
+        CLIENT_MOD_LOADER_CLICK_W2S_HOOK_V1,
+    ),
+    ui_source_files=MOD_LOADER_POLICY.ui_source_files,
+    source_package=MOD_LOADER_POLICY.source_package,
+    payload_directory=MOD_LOADER_POLICY.payload_directory,
+    additional_hosts=MOD_LOADER_POLICY.additional_hosts,
+)
+
 RELEASE_POLICIES: Mapping[str, ReleasePolicy] = MappingProxyType({
     TARGET_VITALS_ALPHA_POLICY_ID: TARGET_VITALS_ALPHA_POLICY,
     FULL_UI_POLICY_ID: FULL_UI_POLICY,
     MOD_LOADER_POLICY_ID: MOD_LOADER_POLICY,
+    MOD_LOADER_V2_POLICY_ID: MOD_LOADER_V2_POLICY,
 })
 
 RELEASE_PROFILES: Mapping[str, ReleaseProfile] = MappingProxyType({
