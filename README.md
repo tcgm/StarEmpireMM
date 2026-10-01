@@ -2,6 +2,11 @@
 
 Star Empire Mod Manager installs and controls community mods without asking players to edit game files by hand.
 
+The v0.7 pre-alpha includes exact-match support for the tested Star Empire
+0.5.25 client and retains 0.5.14 support. It is for hands-on testing; post-login
+gameplay has not yet been confirmed. If a game update changes `Client.exe`, the
+Manager will refuse an unverified install rather than guess at compatibility.
+
 The Manager has one large status button. Green means mod support is enabled; red means the original game executable is active. Installed mods have their own ON or OFF state and are loaded the next time Star Empire starts.
 
 ## What it does

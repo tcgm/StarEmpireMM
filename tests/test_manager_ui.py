@@ -12,6 +12,7 @@ from unittest.mock import patch
 from installer.candidate_builder import BuiltCandidate, CandidateBuildError
 from installer.manager_core import (CompatibilityPack, InstallState,
                                     InstallStatus, ManagerDataError,
+                                    ProcessProbeResult,
                                     save_install_state, sha256_file)
 from installer.mod_package import PackageError
 from installer.manager_ui import (ManagerApp, acquire_signed_update,
@@ -36,6 +37,54 @@ from installer.mod_manifest import ModCompatibility
 
 
 class ManagerUiStateTests(unittest.TestCase):
+    def test_launch_game_uses_the_selected_launcher(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            launcher = game / "StarEmpireLauncher.exe"
+            launcher.write_bytes(b"test launcher")
+            app = object.__new__(ManagerApp)
+            app.game_path = SimpleNamespace(get=lambda: str(game))
+            app.status_text = unittest.mock.Mock()
+            app.summary_text = unittest.mock.Mock()
+
+            with patch("installer.manager_ui.running_game_processes",
+                       return_value=ProcessProbeResult()), patch(
+                       "installer.manager_ui.subprocess.Popen") as launch:
+                app._launch_game()
+
+            launch.assert_called_once_with([str(launcher)], cwd=str(game))
+            app.status_text.set.assert_called_once_with("STAR EMPIRE LAUNCHED")
+
+    def test_launch_game_requires_confirmation_if_process_check_failed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            (game / "StarEmpireLauncher.exe").write_bytes(b"test launcher")
+            app = object.__new__(ManagerApp)
+            app.game_path = SimpleNamespace(get=lambda: str(game))
+            app.status_text = unittest.mock.Mock()
+            app.summary_text = unittest.mock.Mock()
+
+            with patch("installer.manager_ui.running_game_processes",
+                       return_value=ProcessProbeResult.unknown("probe failed")), patch(
+                       "installer.manager_ui.messagebox.askyesno",
+                       return_value=False) as confirm, patch(
+                       "installer.manager_ui.subprocess.Popen") as launch:
+                app._launch_game()
+
+            confirm.assert_called_once()
+            launch.assert_not_called()
+
+    def test_dark_mode_toggle_applies_and_saves_the_choice(self):
+        app = object.__new__(ManagerApp)
+        app.dark_mode = SimpleNamespace(get=lambda: True)
+        app._apply_theme = unittest.mock.Mock()
+        app._save_manager_settings = unittest.mock.Mock()
+
+        app._toggle_dark_mode()
+
+        app._apply_theme.assert_called_once_with(True)
+        app._save_manager_settings.assert_called_once_with()
+
     def test_mod_compatibility_status_is_clear_and_force_is_visible(self):
         compatibility = ModCompatibility(game_versions=("0.4.62",))
 

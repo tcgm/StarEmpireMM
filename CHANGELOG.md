@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.7 (pre-alpha)
+
+- Added a game launch button, dark mode, and more reliable Mods-list refresh.
+- Fixed downloaded updates retaining a deleted `.partial.semod` path.
+- Build now requires Python 3.14 and a verified signed loader, and never
+  installs dependencies automatically.
+- Added an exact-match signed loader for Star Empire 0.5.25 while retaining
+  the 0.5.14 loader. An unknown client hash still fails closed.
+- The 0.5.25 client passed staged install, restore-readiness, mod registration,
+  and login-screen startup checks. Post-login gameplay remains a tester check.
+
+## v0.6
+
+- Included the signed compatibility loader for Star Empire 0.5.14.
+- Fixed mod-update promotion leaving a missing `.partial.semod` path.
+
 ## v0.5
 
 - Star Empire 0.4.73 is supported. The Manager recognises the updated

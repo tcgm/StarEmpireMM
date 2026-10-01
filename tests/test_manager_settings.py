@@ -13,6 +13,20 @@ from mod_loader.host_client import configure_mod_logging
 
 
 class ManagerSettingsTests(unittest.TestCase):
+    def test_schema_one_settings_keep_debug_and_default_to_light_mode(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "manager-settings.json"
+            path.write_text(
+                '{"schema":1,"debug_logging":true}', encoding="utf-8")
+            self.assertEqual(
+                ManagerSettings(debug_logging=True, dark_mode=False),
+                load_manager_settings(path))
+            save_manager_settings(
+                path, ManagerSettings(debug_logging=True, dark_mode=True))
+            self.assertEqual(
+                ManagerSettings(debug_logging=True, dark_mode=True),
+                load_manager_settings(path))
+
     def test_missing_defaults_and_atomic_round_trip(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "state" / "manager-settings.json"

@@ -558,7 +558,7 @@ class ManagerApp:
         self.root = root
         self.release_identity = runtime_identity()
         self.root.title(
-            "Star Empire Mod Manager "
+            "Star Empire Mod Manager PRE-ALPHA "
             f"{self.release_identity.version} [{self.release_identity.build_id}]")
         self.root.geometry("940x660")
         self.root.minsize(800, 560)
@@ -714,6 +714,10 @@ class ManagerApp:
                 f"{LAUNCHER_EXE} was not found in {root}.")
             return
         processes = running_game_processes()
+        if not processes.verified and not messagebox.askyesno(
+                "Cannot confirm whether Star Empire is running",
+                "The process check failed. Launch Star Empire anyway?"):
+            return
         if processes.verified and processes.names and not messagebox.askyesno(
                 "Star Empire may already be running",
                 "Star Empire or its launcher appears to already be running. "
@@ -745,7 +749,7 @@ class ManagerApp:
                   font=("Segoe UI", 16, "bold")).pack(anchor="w")
         ttk.Label(
             outer,
-            text=(f"Version {self.release_identity.version}  •  "
+            text=(f"PRE-ALPHA TEST BUILD  •  Version {self.release_identity.version}  •  "
                   f"Build {self.release_identity.build_id}"),
         ).pack(anchor="w")
         ttk.Label(

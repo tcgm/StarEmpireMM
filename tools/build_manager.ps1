@@ -5,9 +5,22 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$pyVersion = & py -c "import sys; print('.'.join(map(str, sys.version_info[:3])))"
-$pyExecutable = & py -c "import sys; print(sys.executable)"
-Write-Host "Building with: py -> Python $pyVersion ($pyExecutable)"
+if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
+    throw "Python launcher not found. Install Python 3.14 x64 before building."
+}
+$pyExecutable = & py -3.14 -c "import sys; print(sys.executable)"
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($pyExecutable)) {
+    throw "Python 3.14 x64 is required to build the Manager."
+}
+$pyVersion = & $pyExecutable -c "import sys; print('.'.join(map(str, sys.version_info[:3])))"
+if ($LASTEXITCODE -ne 0 -or $pyVersion -notmatch '^3\.14\.') {
+    throw "The selected build interpreter must be Python 3.14."
+}
+& $pyExecutable -c "import PyInstaller, tkinterdnd2, cryptography"
+if ($LASTEXITCODE -ne 0) {
+    throw "Build dependencies are missing from Python 3.14. Install PyInstaller, tkinterdnd2 and cryptography separately, then retry."
+}
+Write-Host "Building with: Python $pyVersion ($pyExecutable)"
 $repository = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $managerRoot = (Resolve-Path (Join-Path $repository "..")).Path
 $stamp = Get-Date -Format "yyyyMMdd.HHmmss"
@@ -25,10 +38,6 @@ if (Test-Path -LiteralPath $output) {
     throw "Refusing to reuse Manager build directory: $output"
 }
 
-$dist = Join-Path $output "dist"
-$work = Join-Path $output "work"
-New-Item -ItemType Directory -Path $dist, $work -Force | Out-Null
-
 if ($EmbeddedLoaderPackages.Count -eq 0) {
     $defaultLoaderDir = Join-Path $repository ".private-release"
     if (Test-Path -LiteralPath $defaultLoaderDir) {
@@ -41,11 +50,8 @@ if ($EmbeddedLoaderPackages.Count -eq 0) {
     }
 }
 if ($EmbeddedLoaderPackages.Count -eq 0) {
-    Write-Warning ("Building with NO embedded compatibility template (.seloader). " `
-        + "This Manager build will refuse to install or update mod support for ANY " `
-        + "game version until a template is embedded. Pass -EmbeddedLoaderPackages, " `
-        + "or place a .seloader file under $(Join-Path $repository '.private-release') " `
-        + "to have it picked up automatically. See docs/DEVELOPMENT.md.")
+    throw ("No signed .seloader package was provided or found in .private-release. " `
+        + "A Manager without one cannot install or update mod support.")
 }
 
 $spec = Join-Path $repository "installer\StarEmpireUiModManager.spec"
@@ -63,6 +69,14 @@ foreach ($source in $EmbeddedLoaderPackages) {
     $embeddedNames[$name] = $true
     $embedded += $resolved
 }
+& $pyExecutable -c "import sys; sys.path.insert(0, sys.argv[1]); from installer.mod_package import verify_mod_package; from installer.trusted_keys import BUILTIN_TRUSTED_KEYS; [verify_mod_package(path, BUILTIN_TRUSTED_KEYS) for path in sys.argv[2:]]" $repository @embedded
+if ($LASTEXITCODE -ne 0) {
+    throw "An embedded .seloader failed signature or compatibility verification."
+}
+
+$dist = Join-Path $output "dist"
+$work = Join-Path $output "work"
+New-Item -ItemType Directory -Path $dist, $work -Force | Out-Null
 $environmentName = "STAR_EMPIRE_MANAGER_EMBEDDED_LOADERS"
 $previousEnvironment = [Environment]::GetEnvironmentVariable($environmentName, "Process")
 try {
@@ -70,7 +84,7 @@ try {
         $environmentName,
         ($embedded -join [System.IO.Path]::PathSeparator),
         "Process")
-    & py -m PyInstaller --noconfirm --clean --distpath $dist --workpath $work $spec
+    & $pyExecutable -m PyInstaller --noconfirm --clean --distpath $dist --workpath $work $spec
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller Manager build failed with exit code $LASTEXITCODE"
     }
@@ -123,6 +137,7 @@ $releaseLedger = [ordered]@{
     schema = 1
     product = "Star Empire Mod Manager"
     manager_version = $managerVersion
+    release_stage = "pre-alpha test build"
     built_at_utc = [DateTime]::UtcNow.ToString("o")
     source_revision = $sourceRevision
     source_dirty = $sourceDirty
@@ -135,7 +150,7 @@ $releaseLedger = [ordered]@{
 }
 $releaseLedgerPath = Join-Path $dist "RELEASE.json"
 $releaseLedger | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $releaseLedgerPath -Encoding utf8
-& py -m tools.audit_manager_artifact --manager $manager
+& $pyExecutable -m tools.audit_manager_artifact --manager $manager
 if ($LASTEXITCODE -ne 0) {
     throw "Manager artifact audit failed with exit code $LASTEXITCODE"
 }

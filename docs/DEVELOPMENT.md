@@ -1,11 +1,11 @@
 # Development and release
 
-Use a current Python installation on Windows. The Manager uses the standard library plus the dependencies exercised by the checked-in tests and frozen build specification. PyInstaller is required only for the standalone executable.
+Use Python 3.14 x64 on Windows. The Manager uses the standard library plus the dependencies exercised by the checked-in tests and frozen build specification. PyInstaller is required only for the standalone executable. Build scripts check dependencies but never install them automatically.
 
 Run the public test suite from the repository root:
 
 ```powershell
-python -B -m unittest discover -s tests -p "test_*.py"
+py -3.14 -B -m unittest discover -s tests -p "test_*.py"
 ```
 
 Build a standalone Manager into a new output directory:
@@ -18,11 +18,14 @@ powershell -ExecutionPolicy Bypass -File tools\build_manager.ps1 `
 
 If `-EmbeddedLoaderPackages` is omitted, the build script auto-discovers every
 `*.seloader` file under `.private-release\` (gitignored, repository-local) and
-embeds those instead. A build with zero embedded packages still succeeds, but
-its Manager can never install or update mod support for any game version — the
-script prints a loud warning when that happens. Keep a copy of the current
-signed `.seloader` in `.private-release\` so an ordinary `build`/`build.ps1`
-run without flags still produces a usable Manager.
+embeds those instead. The build stops if none are found or if any package fails
+signature or compatibility verification. Keep a copy of the current signed
+`.seloader` in `.private-release\` so an ordinary `build.ps1` run without flags
+still produces a usable Manager.
+
+For a pre-alpha test build, use a new build directory and label the handoff
+clearly as testing-only. A public test release must be marked as a GitHub
+pre-release, with unverified gameplay called out; do not present it as stable.
 
 The internal loader package is version-specific release infrastructure. Keep its private signing material and authorised compatibility workspace outside Git. Never copy an installed game, `Client.exe`, extracted official modules, private diffs, player data, logs or credentials into the public tree.
 

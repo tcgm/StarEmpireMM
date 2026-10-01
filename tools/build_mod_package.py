@@ -24,7 +24,7 @@ from installer.release_profiles import (
     validate_recipe_for_profile,
 )
 from installer.trusted_keys import BUILTIN_TRUSTED_KEYS
-from installer.version import MANAGER_VERSION
+from installer.version import LOADER_PACKAGE_COMPAT_VERSION
 
 
 _ZIP_TIME = (2020, 1, 1, 0, 0, 0)
@@ -229,7 +229,7 @@ def build_mod_package(*, ui_source: Path, recipe_path: Path,
         "pack_id": pack_id.strip(),
         "mod_version": mod_version.strip(),
         "game_version": game_version.strip(),
-        "manager_version_min": MANAGER_VERSION,
+        "manager_version_min": LOADER_PACKAGE_COMPAT_VERSION,
         "official_client_sha256": _digest(
             official_client_sha256, "official client hash"),
         "expected_client_sha256": _digest(
