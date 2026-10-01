@@ -110,6 +110,190 @@ def _code_signature(code: CodeType) -> tuple[object, ...]:
     )
 
 
+def _logic_value(value: object) -> object:
+    """Like ``_code_value`` but recurses through ``_logic_signature``."""
+    if isinstance(value, CodeType):
+        return _logic_signature(value)
+    if isinstance(value, tuple):
+        return tuple(_logic_value(item) for item in value)
+    if isinstance(value, frozenset):
+        return frozenset(_logic_value(item) for item in value)
+    return value
+
+
+def _logic_signature(code: CodeType) -> tuple[object, ...]:
+    """Execution-relevant code data, ignoring source position metadata.
+
+    Unlike ``_code_signature``, this also drops ``co_firstlineno`` and
+    ``co_linetable``: editing an unrelated function earlier in the same file
+    shifts every line number that follows without changing what anything
+    actually executes, so line position is not a meaningful signal once we
+    are only trusting specific, named anchors rather than the whole file.
+    """
+    return (
+        code.co_argcount,
+        code.co_posonlyargcount,
+        code.co_kwonlyargcount,
+        code.co_nlocals,
+        code.co_stacksize,
+        code.co_flags,
+        code.co_code,
+        tuple(_logic_value(item) for item in code.co_consts),
+        code.co_names,
+        code.co_varnames,
+        code.co_freevars,
+        code.co_cellvars,
+        code.co_name,
+        code.co_qualname,
+        code.co_exceptiontable,
+    )
+
+
+def _shallow_logic_signature(code: CodeType) -> tuple[object, ...]:
+    """A ``_logic_signature`` that treats nested code objects as opaque.
+
+    Confirms the container's own instructions and the shape (name, arity) of
+    everything it defines, without requiring those definitions' bodies to
+    match. This is what proves a module's overall structure -- imports,
+    class/function ordering, the ``__main__`` guard -- hasn't shifted, while
+    still letting an unrelated method body be rewritten freely.
+    """
+    def proxy(value: object) -> object:
+        if isinstance(value, CodeType):
+            return ("<code>", value.co_qualname, value.co_argcount,
+                    value.co_posonlyargcount, value.co_kwonlyargcount)
+        if isinstance(value, tuple):
+            return tuple(proxy(item) for item in value)
+        if isinstance(value, frozenset):
+            return frozenset(proxy(item) for item in value)
+        return value
+
+    return (
+        code.co_argcount,
+        code.co_posonlyargcount,
+        code.co_kwonlyargcount,
+        code.co_nlocals,
+        code.co_stacksize,
+        code.co_flags,
+        code.co_code,
+        tuple(proxy(item) for item in code.co_consts),
+        code.co_names,
+        code.co_varnames,
+        code.co_freevars,
+        code.co_cellvars,
+        code.co_name,
+        code.co_qualname,
+    )
+
+
+def _find_code_by_qualname(code: CodeType, qualname: str) -> CodeType | None:
+    if code.co_qualname == qualname:
+        return code
+    for const in code.co_consts:
+        if isinstance(const, CodeType):
+            found = _find_code_by_qualname(const, qualname)
+            if found is not None:
+                return found
+    return None
+
+
+# Functions the reviewed hook recipes actually anchor against, by host
+# module. A build may rewrite anything else -- even extensively -- without
+# blocking a targeted verification, mirroring how a Forge coremod patches
+# named methods instead of hashing a whole jar.
+TARGETED_ANCHOR_QUALNAMES: Mapping[str, tuple[str, ...]] = {
+    "Client": ("SolarSystemWindow.run",),
+    "render_mixin": ("RenderMixin._draw_station_overlay",),
+}
+
+
+def _verify_targeted_anchors(
+        module_name: str, loose: CodeType, embedded: CodeType) -> None:
+    """Prove only the reviewed hook anchors survive in this build.
+
+    Instead of demanding the entire module's compiled output match -- which
+    can fail for reasons that have nothing to do with where mod hooks are
+    inserted -- this proves only that the module's own top-level structure
+    is unchanged and that every function the hook recipe anchors against is
+    identical in logic to the shipped loose source.
+    """
+    if _shallow_logic_signature(loose) != _shallow_logic_signature(embedded):
+        raise VersionBindingError(
+            f"{module_name} top-level structure does not match the frozen build")
+    for qualname in TARGETED_ANCHOR_QUALNAMES.get(module_name, ()):
+        loose_anchor = _find_code_by_qualname(loose, qualname)
+        embedded_anchor = _find_code_by_qualname(embedded, qualname)
+        if loose_anchor is None or embedded_anchor is None:
+            raise VersionBindingError(
+                f"{module_name} is missing the reviewed anchor {qualname}")
+        if _logic_signature(loose_anchor) != _logic_signature(embedded_anchor):
+            raise VersionBindingError(
+                f"{module_name}.{qualname} does not match the frozen build")
+
+
+def verify_targeted_client_archive(client_exe: Path, source: bytes) -> None:
+    """Targeted counterpart to ``verify_clean_client_archive``.
+
+    Requires the two frozen Client copies to agree with each other exactly
+    (a cheap, strict self-consistency check), but only requires the loose
+    source to agree with them over the reviewed anchors -- see
+    ``_verify_targeted_anchors`` -- tolerating unrelated drift elsewhere in
+    Client.py such as an unrelated method being rewritten.
+    """
+    try:
+        loose = compile(source.decode("utf-8"), "Client.py", "exec",
+                        optimize=0, dont_inherit=True)
+        archive = CArchiveReader(str(client_exe))
+        if CLIENT_ENTRY not in archive.toc or PYZ_ENTRY not in archive.toc:
+            raise VersionBindingError("Client archive is missing required entries")
+        if any(str(name).startswith("star_empire_ui_mod") for name in archive.toc):
+            raise VersionBindingError("Client archive already contains UI Mod entries")
+        outer = marshal.loads(archive.extract(CLIENT_ENTRY))
+        pyz = archive.open_embedded_archive(PYZ_ENTRY)
+        if any(str(name).startswith("star_empire_ui_mod") for name in pyz.toc):
+            raise VersionBindingError("Client PYZ already contains UI Mod entries")
+        embedded = pyz.extract(CLIENT_ENTRY)
+    except VersionBindingError:
+        raise
+    except Exception as error:
+        raise VersionBindingError("could not verify the frozen Client archive") from error
+    if not isinstance(outer, CodeType) or not isinstance(embedded, CodeType):
+        raise VersionBindingError("frozen Client entries are not Python code")
+    if _code_signature(outer) != _code_signature(embedded):
+        raise VersionBindingError(
+            "the two frozen Client copies disagree with each other")
+    _verify_targeted_anchors(CLIENT_ENTRY, loose, embedded)
+
+
+def verify_targeted_module_archive(
+        client_exe: Path, module_name: str, module_path: str,
+        source: bytes) -> None:
+    """Targeted counterpart to ``verify_clean_module_archive``."""
+    if module_name == CLIENT_ENTRY:
+        verify_targeted_client_archive(client_exe, source)
+        return
+    try:
+        loose = compile(source.decode("utf-8"), module_path, "exec",
+                        optimize=0, dont_inherit=True)
+        archive = CArchiveReader(str(client_exe))
+        if PYZ_ENTRY not in archive.toc:
+            raise VersionBindingError("Client archive is missing its PYZ entry")
+        pyz = archive.open_embedded_archive(PYZ_ENTRY)
+        if module_name not in pyz.toc:
+            raise VersionBindingError(
+                f"Client PYZ is missing required module {module_name}")
+        embedded = pyz.extract(module_name)
+    except VersionBindingError:
+        raise
+    except Exception as error:
+        raise VersionBindingError(
+            f"could not verify frozen module {module_name}") from error
+    if not isinstance(embedded, CodeType):
+        raise VersionBindingError(
+            f"frozen module {module_name} is not Python code")
+    _verify_targeted_anchors(module_name, loose, embedded)
+
+
 def verify_clean_client_archive(client_exe: Path, source: bytes) -> None:
     """Prove loose Client.py matches both frozen Client copies exactly."""
     try:
@@ -701,6 +885,10 @@ def build_version_binding(
         for module_name, module_path in policy.hosts[1:]:
             verify_clean_module_archive(
                 client, module_name, module_path, sources[module_name])
+    elif baseline_probe is verify_targeted_client_archive:
+        for module_name, module_path in policy.hosts[1:]:
+            verify_targeted_module_archive(
+                client, module_name, module_path, sources[module_name])
     offsets = locate_policy_offsets(sources, policy)
     staged_sources = _apply_policy_fragments(sources, policy, offsets)
     for module_name, module_path in policy.hosts:
@@ -802,11 +990,23 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--policy", default=TARGET_VITALS_ALPHA_POLICY_ID)
     parser.add_argument(
         "--authored-source", "--ui-source", dest="ui_source", type=Path)
+    parser.add_argument(
+        "--verification", choices=("strict", "targeted"), default="strict",
+        help=(
+            "strict (default) requires the whole loose Client source to "
+            "match the frozen build byte-for-byte. targeted instead proves "
+            "only that the specific functions the hook recipe anchors "
+            "against are unchanged, tolerating unrelated rewrites elsewhere "
+            "in the file -- use this when a build updates code the UI mod "
+            "never touches."))
     return parser.parse_args()
 
 
 def main() -> int:
     arguments = _arguments()
+    baseline_probe = (
+        verify_targeted_client_archive if arguments.verification == "targeted"
+        else verify_clean_client_archive)
     try:
         result = build_version_binding(
             game_root=arguments.game_root,
@@ -815,6 +1015,7 @@ def main() -> int:
                 arguments.expected_official_client_sha256),
             policy_id=arguments.policy,
             ui_source=arguments.ui_source,
+            baseline_probe=baseline_probe,
         )
     except (OSError, ValueError, VersionBindingError) as error:
         print(f"ERROR: {error}")

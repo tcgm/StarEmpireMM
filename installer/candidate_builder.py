@@ -41,6 +41,7 @@ class BuiltCandidate:
     compatibility_test: bool = False
     observed_version: str | None = None
     temporary_root: Path | None = None
+    verification_mode: str = "strict"
 
     def verify_for(self, pack: CompatibilityPack) -> Path:
         candidate = self.path.resolve(strict=True)
@@ -211,6 +212,7 @@ def build_candidate(package: VerifiedModPackage, game_root: Path,
 
     local_recipe_bytes: bytes | None = None
     local_offsets: dict[str, int] | None = None
+    verification_mode = "strict"
     if compatibility_test:
         if (not isinstance(package, VerifiedModPackage)
                 or package.manifest.get("schema") != 2
@@ -224,6 +226,7 @@ def build_candidate(package: VerifiedModPackage, game_root: Path,
                 UI_MARKERS, VersionBindingError, _apply_policy_fragments,
                 _build_recipe, locate_policy_offsets,
                 verify_clean_client_archive, verify_clean_module_archive,
+                verify_targeted_client_archive, verify_targeted_module_archive,
             )
             sources = {
                 name: (game_root / "_internal" / path).read_bytes()
@@ -232,10 +235,27 @@ def build_candidate(package: VerifiedModPackage, game_root: Path,
             if any(marker in sources["Client"] for marker in UI_MARKERS):
                 raise VersionBindingError(
                     "Client.py already contains UI Mod integration markers")
-            verify_clean_client_archive(client, sources["Client"])
-            for module_name, module_path in policy.hosts[1:]:
-                verify_clean_module_archive(
-                    client, module_name, module_path, sources[module_name])
+            try:
+                verify_clean_client_archive(client, sources["Client"])
+                for module_name, module_path in policy.hosts[1:]:
+                    verify_clean_module_archive(
+                        client, module_name, module_path, sources[module_name])
+            except VersionBindingError as strict_error:
+                # Whole-file equality failed. Fall back to a Forge-style
+                # targeted probe: it only requires the module's top-level
+                # structure and the specific functions the hook recipe
+                # anchors against to match, tolerating unrelated rewrites
+                # (e.g. a networking change) elsewhere in the file. If even
+                # that narrower claim cannot be proven, surface the original
+                # strict error -- it carries more diagnostic information.
+                try:
+                    verify_targeted_client_archive(client, sources["Client"])
+                    for module_name, module_path in policy.hosts[1:]:
+                        verify_targeted_module_archive(
+                            client, module_name, module_path, sources[module_name])
+                except VersionBindingError:
+                    raise strict_error
+                verification_mode = "targeted"
             local_offsets = locate_policy_offsets(sources, policy)
             staged_sources = _apply_policy_fragments(
                 sources, policy, local_offsets)
@@ -379,6 +399,7 @@ def build_candidate(package: VerifiedModPackage, game_root: Path,
             "pack_digest": compatibility.pack_digest,
             "key_id": compatibility.key_id,
             "compatibility_test": compatibility_test,
+            "verification_mode": verification_mode,
             "observed_game_version": game_version,
             "signed_official_client_sha256": compatibility.official_client_sha256,
             "signed_expected_client_sha256": compatibility.expected_client_sha256,
@@ -410,7 +431,8 @@ def build_candidate(package: VerifiedModPackage, game_root: Path,
             candidate, candidate_sha256, baseline_sha256,
             compatibility.pack_id, compatibility.pack_digest,
             compatibility.key_id, selected, audit,
-            compatibility_test, game_version, transaction_root)
+            compatibility_test, game_version, transaction_root,
+            verification_mode)
     except Exception:
         shutil.rmtree(transaction_root, ignore_errors=True)
         raise

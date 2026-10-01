@@ -1276,9 +1276,16 @@ class ManagerApp:
                 self._package, inspection.game_root, self._work_root,
                 baseline_client=baseline,
                 compatibility_test=compatibility_test)
-            progress.step(
-                "The isolated loader build passed",
-                "The rebuilt client compiled and its archive checks succeeded.")
+            if getattr(candidate, "verification_mode", "strict") == "targeted":
+                progress.step(
+                    "The isolated loader build passed (targeted check)",
+                    "This build changed code outside the loader's hook "
+                    "points, so only those specific hook points were "
+                    "confirmed unchanged, not the whole file.")
+            else:
+                progress.step(
+                    "The isolated loader build passed",
+                    "The rebuilt client compiled and its archive checks succeeded.")
             progress.step(
                 "Backing up vanilla and enabling mod support",
                 "The current vanilla Client.exe is preserved before the verified replacement.")
@@ -1814,9 +1821,21 @@ class ManagerApp:
             self._candidate = None
             messagebox.showerror("Candidate build blocked", str(error))
         else:
+            targeted = (
+                compatibility_test
+                and self._candidate is not None
+                and getattr(self._candidate, "verification_mode", "strict")
+                    == "targeted")
             messagebox.showinfo(
                 "Candidate ready",
                 ("The compatibility-test candidate compiled and its isolated "
+                 "build audit verifies using a targeted check: only the "
+                 "mod's reviewed hook points were confirmed unchanged, not "
+                 "the whole file, because this build also changed unrelated "
+                 "code. Install is now available, with one final "
+                 "compatibility warning."
+                 if targeted else
+                 "The compatibility-test candidate compiled and its isolated "
                  "build audit verifies. Install is now available, with one "
                  "final compatibility warning."
                  if compatibility_test else
@@ -1843,11 +1862,18 @@ class ManagerApp:
             self._set_actions()
             return
         if self._candidate.compatibility_test:
+            targeted_note = (
+                "\n\nThis build also changed code outside the mod's hook "
+                "points, so verification only confirmed those specific hook "
+                "points matched -- not the whole file."
+                if getattr(self._candidate, "verification_mode", "strict")
+                   == "targeted" else "")
             confirmed = messagebox.askyesno(
                 "Final compatibility warning",
                 "This candidate was adapted locally for an unlisted game build. "
                 "It compiled and passed the isolated archive checks, but it has "
-                "not received normal signed-build compatibility testing.\n\n"
+                "not received normal signed-build compatibility testing."
+                + targeted_note + "\n\n"
                 "The Manager will create a permanent hash-verified vanilla backup "
                 "before installation, and Restore Vanilla remains available. "
                 "Continue?")
