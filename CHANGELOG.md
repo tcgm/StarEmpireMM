@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.8 (pre-alpha)
+
+- Added a targeted compatibility verification mode: when a game update
+  changes code outside the mod's reviewed hook points (as 0.5.293 did to
+  its networking code), the Manager now confirms only those specific hook
+  points are unchanged instead of refusing the whole build. The stricter
+  whole-file check still runs first and the UI discloses when the narrower
+  check was used instead.
+
 ## v0.7 (pre-alpha)
 
 - Added a game launch button, dark mode, and more reliable Mods-list refresh.

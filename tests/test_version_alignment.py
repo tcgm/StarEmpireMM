@@ -9,8 +9,8 @@ from installer.version import (LOADER_PACKAGE_COMPAT_VERSION, MANAGER_VERSION,
 
 class ReleaseVersionAlignmentTests(unittest.TestCase):
     def test_manager_uses_the_public_github_version(self):
-        self.assertEqual("0.7", MANAGER_VERSION)
-        self.assertEqual((0, 7, 0), version_tuple(MANAGER_VERSION))
+        self.assertEqual("0.8", MANAGER_VERSION)
+        self.assertEqual((0, 8, 0), version_tuple(MANAGER_VERSION))
         self.assertEqual((0, 5, 1), version_tuple("0.5.1"))
 
     def test_loader_compatibility_version_is_not_the_public_release(self):
