@@ -13,10 +13,14 @@ import sys
 # Public release version. Keep this aligned with the GitHub release tag.
 MANAGER_VERSION = "0.7"
 
+# Compatibility capability of the existing signed loader template. This is
+# package metadata, not the public Manager release version.
+LOADER_PACKAGE_COMPAT_VERSION = "0.4.7"
+
 # Loader packages created before public version alignment wrote the old
 # implementation number into ``manager_version_min``. Translate that historical
-# metadata to the public release that replaced it. New packages always write
-# ``MANAGER_VERSION`` and therefore never add another alias.
+# metadata to the public release that replaced it. Newly built loader packages
+# write the compatibility capability above, not the current release number.
 LEGACY_PACKAGE_REQUIREMENT_ALIASES = {"0.4.6": "0.4"}
 
 

@@ -184,8 +184,12 @@ def acquire_github_update(
             pending.unlink(missing_ok=True)
         else:
             pending.replace(destination)
+        retained = verify_semod_package(destination)
+        if retained.package_sha256 != digest:
+            raise ModUpdateError(
+                "retained update package changed after verification")
         return AcquiredModUpdate(
-            package, destination, release.repository,
+            retained, destination, release.repository,
             installed.package_sha256)
     except SemodPackageError as error:
         raise ModUpdateError("downloaded mod package is invalid or unsafe") from error

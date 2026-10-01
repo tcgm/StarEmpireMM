@@ -95,16 +95,28 @@ class ModUpdateTests(unittest.TestCase):
                           "https://github.com/owner/repo/releases/download/v2/x",
                           str(len(package_bytes))),
             ))
-            verified = SimpleNamespace(
-                manifest=SimpleNamespace(mod_id="example.mod", version="2.0.0"),
-                package_sha256=__import__("hashlib").sha256(
-                    package_bytes).hexdigest().upper())
+            digest = __import__("hashlib").sha256(
+                package_bytes).hexdigest().upper()
+            verified_paths = []
+
+            def verify(path):
+                self.assertTrue(path.is_file())
+                verified_paths.append(path)
+                return SimpleNamespace(
+                    path=path,
+                    manifest=SimpleNamespace(
+                        mod_id="example.mod", version="2.0.0"),
+                    package_sha256=digest)
+
             with patch("installer.mod_updates.verify_semod_package",
-                       return_value=verified):
+                       side_effect=verify):
                 result = acquire_github_update(
                     installed, root,
                     opener=lambda _request, timeout: next(responses))
-            self.assertIs(verified, result.package)
+            self.assertEqual(2, len(verified_paths))
+            self.assertTrue(verified_paths[0].name.endswith(".partial.semod"))
+            self.assertEqual(result.path, verified_paths[1])
+            self.assertEqual(result.path, result.package.path)
             self.assertTrue(result.path.is_file())
             self.assertEqual(package_bytes, result.path.read_bytes())
             self.assertFalse(tuple(root.glob("*.partial.semod")))
@@ -114,9 +126,24 @@ class ModUpdateTests(unittest.TestCase):
                 _Response(package_bytes,
                           "https://github.com/owner/repo/releases/download/v2/x"),
             ))
+            with patch("installer.mod_updates.verify_semod_package",
+                       side_effect=verify):
+                repeated = acquire_github_update(
+                    installed, root,
+                    opener=lambda _request, timeout: next(responses))
+            self.assertEqual(result.path, repeated.path)
+            self.assertEqual(repeated.path, repeated.package.path)
+            self.assertEqual(4, len(verified_paths))
+            self.assertFalse(tuple(root.glob("*.partial.semod")))
+
+            responses = iter((
+                _Response(_release(), "https://api.github.com/latest"),
+                _Response(package_bytes,
+                          "https://github.com/owner/repo/releases/download/v2/x"),
+            ))
             wrong = SimpleNamespace(
                 manifest=SimpleNamespace(mod_id="other.mod", version="2.0.0"),
-                package_sha256=verified.package_sha256)
+                package_sha256=digest)
             with patch("installer.mod_updates.verify_semod_package",
                        return_value=wrong):
                 with self.assertRaisesRegex(ModUpdateError, "different mod"):
