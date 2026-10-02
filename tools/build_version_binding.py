@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import ast
 from dataclasses import dataclass
+import dis
 import hashlib
 import json
 import marshal
@@ -197,48 +198,189 @@ def _find_code_by_qualname(code: CodeType, qualname: str) -> CodeType | None:
     return None
 
 
-# Functions the reviewed hook recipes actually anchor against, by host
-# module. A build may rewrite anything else -- even extensively -- without
-# blocking a targeted verification, mirroring how a Forge coremod patches
-# named methods instead of hashing a whole jar.
-TARGETED_ANCHOR_QUALNAMES: Mapping[str, tuple[str, ...]] = {
-    "Client": ("SolarSystemWindow.run",),
-    "render_mixin": ("RenderMixin._draw_station_overlay",),
-}
+_JUMP_OPCODES = frozenset(dis.hasjrel) | frozenset(dis.hasjabs)
 
 
-def _verify_targeted_anchors(
-        module_name: str, loose: CodeType, embedded: CodeType) -> None:
-    """Prove only the reviewed hook anchors survive in this build.
+def _instruction_key(instr: "dis.Instruction") -> tuple[object, ...]:
+    """Normalize one instruction so incidental drift elsewhere is invisible.
 
-    Instead of demanding the entire module's compiled output match -- which
-    can fail for reasons that have nothing to do with where mod hooks are
-    inserted -- this proves only that the module's own top-level structure
-    is unchanged and that every function the hook recipe anchors against is
-    identical in logic to the shipped loose source.
+    Jump arguments (including the EXTENDED_ARG prefixes that encode large
+    ones) are pure byte-offset bookkeeping: inserting or removing code
+    *anywhere else* in the same function shifts every jump target after it
+    even though nothing about that jump's own logic changed, so comparing
+    them verbatim would make this no more tolerant than a whole-function
+    hash. Nested code objects (closures, comprehensions) are identified by
+    shape rather than deep-compared here, since any nested anchors get their
+    own pattern check.
     """
-    if _shallow_logic_signature(loose) != _shallow_logic_signature(embedded):
-        raise VersionBindingError(
-            f"{module_name} top-level structure does not match the frozen build")
-    for qualname in TARGETED_ANCHOR_QUALNAMES.get(module_name, ()):
-        loose_anchor = _find_code_by_qualname(loose, qualname)
-        embedded_anchor = _find_code_by_qualname(embedded, qualname)
-        if loose_anchor is None or embedded_anchor is None:
-            raise VersionBindingError(
-                f"{module_name} is missing the reviewed anchor {qualname}")
-        if _logic_signature(loose_anchor) != _logic_signature(embedded_anchor):
-            raise VersionBindingError(
-                f"{module_name}.{qualname} does not match the frozen build")
+    if instr.opcode in _JUMP_OPCODES or instr.opname in ("EXTENDED_ARG", "NOT_TAKEN"):
+        return (instr.opname,)
+    if isinstance(instr.argval, CodeType):
+        return (instr.opname, instr.argval.co_qualname, instr.argval.co_argcount)
+    return (instr.opname, instr.argval)
+
+
+def _full_pattern(code: CodeType) -> tuple[tuple[object, ...], ...]:
+    return tuple(_instruction_key(instr) for instr in dis.get_instructions(code))
+
+
+def _line_range_pattern(
+        code: CodeType, start_line: int, end_line: int) -> tuple[tuple[object, ...], ...]:
+    """The normalized instructions whose source position falls in one anchor."""
+    keys = []
+    for instr in dis.get_instructions(code):
+        line = instr.positions.lineno if instr.positions else None
+        if line is not None and start_line <= line <= end_line:
+            keys.append(_instruction_key(instr))
+    return tuple(keys)
+
+
+def _count_subsequence(
+        haystack: tuple[tuple[object, ...], ...],
+        needle: tuple[tuple[object, ...], ...]) -> int:
+    if not needle:
+        return 0
+    count = 0
+    limit = len(haystack) - len(needle)
+    for start in range(limit + 1):
+        if haystack[start:start + len(needle)] == needle:
+            count += 1
+    return count
+
+
+def _node_own_span(node: ast.AST) -> tuple[int, int]:
+    """The node's own line range, excluding an ``If``'s elif/else tail.
+
+    Python represents ``elif`` as a nested ``If`` in ``node.orelse``, so an
+    outer ``If``'s ``end_lineno`` extends through every later branch of the
+    same dispatch chain -- for a pygame event-type chain, that means
+    hundreds of unrelated branches. The anchor is only ``node`` and its own
+    ``body``, never its ``orelse``.
+    """
+    start = node.lineno
+    if isinstance(node, ast.If) and node.body:
+        end = node.body[-1].end_lineno
+    else:
+        end = getattr(node, "end_lineno", start)
+    return start, end
+
+
+_ANCHOR_CONTEXT_LINES = 12
+
+
+def _verify_anchor_pattern(
+        label: str, haystack: tuple[tuple[object, ...], ...],
+        loose_code: CodeType, node: ast.AST) -> None:
+    """Prove one anchor statement's exact logic appears once in frozen code.
+
+    This is the Forge-coremod model applied at the bytecode level: instead
+    of requiring the whole enclosing function (which can be tens of
+    thousands of instructions, rewritten in some unrelated way on almost
+    every build) to match, only the specific statement the hook recipe
+    inserts relative to has to be found, unambiguously, in the frozen build.
+
+    The anchor statement alone is sometimes too short to be unique -- a
+    one-line helper call can legitimately appear several times in a function
+    this large. When that happens, the window is widened a few source lines
+    on each side (still a sliver of the enclosing function) until exactly
+    one match remains or the attempt is abandoned; failing closed on an
+    ambiguous anchor is always preferred to guessing which occurrence is the
+    real one.
+    """
+    start_line, end_line = _node_own_span(node)
+    last_error: VersionBindingError | None = None
+    for context in (0, _ANCHOR_CONTEXT_LINES, _ANCHOR_CONTEXT_LINES * 3):
+        pattern = _line_range_pattern(
+            loose_code, max(1, start_line - context), end_line + context)
+        if not pattern:
+            last_error = VersionBindingError(f"anchor pattern is empty: {label}")
+            continue
+        occurrences = _count_subsequence(haystack, pattern)
+        if occurrences == 1:
+            return
+        last_error = VersionBindingError(
+            f"anchor is missing or ambiguous in the frozen build: "
+            f"{label} (found {occurrences} matches)")
+    raise last_error
+
+
+def _client_run_anchor_nodes(source: bytes) -> dict[str, ast.AST]:
+    """AST nodes for every reviewed Client.py anchor inside SolarSystemWindow.run.
+
+    Excludes the top-level ``__main__`` guard, which lives outside ``run``
+    and is instead covered by the module-level shallow structural check.
+    """
+    tree = ast.parse(source.decode("utf-8"), filename="Client.py")
+    window_class = _exactly_one(
+        (node for node in tree.body
+         if isinstance(node, ast.ClassDef) and node.name == "SolarSystemWindow"),
+        "SolarSystemWindow class",
+    )
+    run = _exactly_one(
+        (node for node in window_class.body
+         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+         and node.name == "run"),
+        "SolarSystemWindow.run",
+    )
+    display_assignment = _exactly_one(
+        (node for node in run.body if _is_screen_display_assignment(node)),
+        "initial display-mode assignment",
+    )
+    event_boundaries: list[ast.If] = []
+    for statements in _statement_lists(run):
+        for index in range(len(statements) - 1):
+            if (_is_turret_guard(statements[index])
+                    and _is_event_quit_test(statements[index + 1])):
+                event_boundaries.append(statements[index + 1])
+    event_boundary = _exactly_one(event_boundaries, "turret event guard")
+    overlay_boundary = _turret_foreground_boundary(run)
+    nodes = {
+        "display_assignment": display_assignment,
+        "event_boundary": event_boundary,
+        "overlay_boundary": overlay_boundary,
+    }
+    frame_candidates = tuple(
+        node for node in ast.walk(run) if _is_render_frame_assignment(node))
+    if len(frame_candidates) == 1:
+        nodes["frame_assignment"] = frame_candidates[0]
+    return nodes
+
+
+def _render_mixin_anchor_nodes(source: bytes) -> dict[str, ast.AST]:
+    tree = ast.parse(source.decode("utf-8"), filename="render_mixin.py")
+    renderer = _exactly_one(
+        (node for node in tree.body
+         if isinstance(node, ast.ClassDef) and node.name == "RenderMixin"),
+        "RenderMixin class",
+    )
+    station_draw = _exactly_one(
+        (node for node in renderer.body
+         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+         and node.name == "_draw_station_overlay"),
+        "RenderMixin._draw_station_overlay",
+    )
+    search_advance = _exactly_one(
+        (node for node in ast.walk(station_draw)
+         if isinstance(node, ast.AugAssign)
+         and isinstance(node.target, ast.Name)
+         and node.target.id == "_iy"
+         and any(isinstance(item, ast.Name)
+                 and item.id == "_STOR_SEARCH_H"
+                 for item in ast.walk(node.value))),
+        "Storage search layout advance",
+    )
+    return {"search_advance": search_advance}
 
 
 def verify_targeted_client_archive(client_exe: Path, source: bytes) -> None:
     """Targeted counterpart to ``verify_clean_client_archive``.
 
     Requires the two frozen Client copies to agree with each other exactly
-    (a cheap, strict self-consistency check), but only requires the loose
-    source to agree with them over the reviewed anchors -- see
-    ``_verify_targeted_anchors`` -- tolerating unrelated drift elsewhere in
-    Client.py such as an unrelated method being rewritten.
+    (a cheap, strict self-consistency check) and the module's top-level
+    structure to match, but only requires each reviewed anchor *statement*
+    inside ``SolarSystemWindow.run`` to be found, unambiguously, in the
+    frozen build -- tolerating a rewrite anywhere else in that function,
+    such as an unrelated feature added to its event-handling loop.
     """
     try:
         loose = compile(source.decode("utf-8"), "Client.py", "exec",
@@ -262,7 +404,20 @@ def verify_targeted_client_archive(client_exe: Path, source: bytes) -> None:
     if _code_signature(outer) != _code_signature(embedded):
         raise VersionBindingError(
             "the two frozen Client copies disagree with each other")
-    _verify_targeted_anchors(CLIENT_ENTRY, loose, embedded)
+    if _shallow_logic_signature(loose) != _shallow_logic_signature(embedded):
+        raise VersionBindingError(
+            "Client top-level structure does not match the frozen build")
+    run_embedded = _find_code_by_qualname(embedded, "SolarSystemWindow.run")
+    if run_embedded is None:
+        raise VersionBindingError(
+            "Client is missing the reviewed anchor SolarSystemWindow.run")
+    run_loose = _find_code_by_qualname(loose, "SolarSystemWindow.run")
+    if run_loose is None:
+        raise VersionBindingError(
+            "loose Client.py is missing SolarSystemWindow.run")
+    haystack = _full_pattern(run_embedded)
+    for label, node in _client_run_anchor_nodes(source).items():
+        _verify_anchor_pattern(label, haystack, run_loose, node)
 
 
 def verify_targeted_module_archive(
@@ -291,7 +446,28 @@ def verify_targeted_module_archive(
     if not isinstance(embedded, CodeType):
         raise VersionBindingError(
             f"frozen module {module_name} is not Python code")
-    _verify_targeted_anchors(module_name, loose, embedded)
+    if module_name != "render_mixin":
+        if _logic_signature(loose) != _logic_signature(embedded):
+            raise VersionBindingError(
+                f"{module_name} does not match the frozen build")
+        return
+    if _shallow_logic_signature(loose) != _shallow_logic_signature(embedded):
+        raise VersionBindingError(
+            f"{module_name} top-level structure does not match the frozen build")
+    draw_embedded = _find_code_by_qualname(
+        embedded, "RenderMixin._draw_station_overlay")
+    if draw_embedded is None:
+        raise VersionBindingError(
+            f"{module_name} is missing the reviewed anchor "
+            "RenderMixin._draw_station_overlay")
+    draw_loose = _find_code_by_qualname(
+        loose, "RenderMixin._draw_station_overlay")
+    if draw_loose is None:
+        raise VersionBindingError(
+            f"loose {module_path} is missing RenderMixin._draw_station_overlay")
+    haystack = _full_pattern(draw_embedded)
+    for label, node in _render_mixin_anchor_nodes(source).items():
+        _verify_anchor_pattern(label, haystack, draw_loose, node)
 
 
 def verify_clean_client_archive(client_exe: Path, source: bytes) -> None:

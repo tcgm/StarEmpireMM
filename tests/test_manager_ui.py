@@ -46,6 +46,8 @@ class ManagerUiStateTests(unittest.TestCase):
             app.game_path = SimpleNamespace(get=lambda: str(game))
             app.status_text = unittest.mock.Mock()
             app.summary_text = unittest.mock.Mock()
+            app.refresh = unittest.mock.Mock()
+            app._inspection = None
 
             with patch("installer.manager_ui.running_game_processes",
                        return_value=ProcessProbeResult()), patch(
@@ -63,6 +65,8 @@ class ManagerUiStateTests(unittest.TestCase):
             app.game_path = SimpleNamespace(get=lambda: str(game))
             app.status_text = unittest.mock.Mock()
             app.summary_text = unittest.mock.Mock()
+            app.refresh = unittest.mock.Mock()
+            app._inspection = None
 
             with patch("installer.manager_ui.running_game_processes",
                        return_value=ProcessProbeResult.unknown("probe failed")), patch(
@@ -73,6 +77,64 @@ class ManagerUiStateTests(unittest.TestCase):
 
             confirm.assert_called_once()
             launch.assert_not_called()
+
+    def test_launch_game_reconciles_a_stale_patch_before_launching(self):
+        """The official launcher can revert a patch on its own between plays.
+
+        When that happened (``Inspection.state is not None`` but the status
+        is no longer a matching healthy install), Launch must retry the same
+        automatic rebuild "Prepare Game" uses before handing off to the
+        launcher, instead of silently running whatever the launcher just put
+        in place.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            launcher = game / "StarEmpireLauncher.exe"
+            launcher.write_bytes(b"test launcher")
+            app = object.__new__(ManagerApp)
+            app.game_path = SimpleNamespace(get=lambda: str(game))
+            app.status_text = unittest.mock.Mock()
+            app.summary_text = unittest.mock.Mock()
+            stale = SimpleNamespace(
+                status=InstallStatus.UNSUPPORTED_VANILLA,
+                state=SimpleNamespace(original_client=Path("old")),
+                can_update=False)
+            app._inspection = stale
+            app.refresh = unittest.mock.Mock()
+            app._prepare_game_for_mod_install = unittest.mock.Mock(
+                return_value=True)
+
+            with patch("installer.manager_ui.running_game_processes",
+                       return_value=ProcessProbeResult()), patch(
+                       "installer.manager_ui.subprocess.Popen") as launch:
+                app._launch_game()
+
+            app.refresh.assert_called_once()
+            app._prepare_game_for_mod_install.assert_called_once()
+            launch.assert_called_once_with([str(launcher)], cwd=str(game))
+
+    def test_launch_game_skips_reconciliation_when_already_healthy(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            (game / "StarEmpireLauncher.exe").write_bytes(b"test launcher")
+            app = object.__new__(ManagerApp)
+            app.game_path = SimpleNamespace(get=lambda: str(game))
+            app.status_text = unittest.mock.Mock()
+            app.summary_text = unittest.mock.Mock()
+            healthy = SimpleNamespace(
+                status=InstallStatus.INSTALLED_HEALTHY,
+                state=SimpleNamespace(original_client=Path("old")),
+                can_update=False)
+            app._inspection = healthy
+            app.refresh = unittest.mock.Mock()
+            app._prepare_game_for_mod_install = unittest.mock.Mock()
+
+            with patch("installer.manager_ui.running_game_processes",
+                       return_value=ProcessProbeResult()), patch(
+                       "installer.manager_ui.subprocess.Popen"):
+                app._launch_game()
+
+            app._prepare_game_for_mod_install.assert_not_called()
 
     def test_dark_mode_toggle_applies_and_saves_the_choice(self):
         app = object.__new__(ManagerApp)

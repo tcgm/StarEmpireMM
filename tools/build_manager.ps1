@@ -43,9 +43,40 @@ if ($EmbeddedLoaderPackages.Count -eq 0) {
     if (Test-Path -LiteralPath $defaultLoaderDir) {
         $discovered = Get-ChildItem -LiteralPath $defaultLoaderDir -Filter "*.seloader" -File -ErrorAction SilentlyContinue
         if ($discovered) {
-            $EmbeddedLoaderPackages = @($discovered | ForEach-Object { $_.FullName })
-            Write-Host ("No -EmbeddedLoaderPackages given; auto-discovered " `
-                + "$($EmbeddedLoaderPackages.Count) package(s) in $defaultLoaderDir")
+            # Only auto-embed packages BUILTIN_TRUSTED_KEYS actually trusts.
+            # .private-release/ also accumulates personal/local-dev .seloader
+            # files (e.g. self-signed test builds for an unlisted game
+            # version) that are never meant to ship in the Manager everyone
+            # gets -- those still work at runtime via the Manager's own
+            # local trust store or the unsigned-package escape hatch, they
+            # just aren't baked into this executable. An explicit
+            # -EmbeddedLoaderPackages list is never filtered this way: if
+            # you name a package directly, an untrusted signer is a real
+            # error, not something to silently skip.
+            $trusted = @()
+            foreach ($candidate in $discovered) {
+                $path = $candidate.FullName
+                & $pyExecutable -c (
+                    "import sys; sys.path.insert(0, sys.argv[1]); " +
+                    "from installer.mod_package import PackageError, verify_mod_package; " +
+                    "from installer.trusted_keys import BUILTIN_TRUSTED_KEYS`n" +
+                    "try:`n" +
+                    "    verify_mod_package(sys.argv[2], BUILTIN_TRUSTED_KEYS)`n" +
+                    "except PackageError as error:`n" +
+                    "    print('SKIP: ' + str(error)); sys.exit(1)`n"
+                ) $repository $path | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    $trusted += $path
+                } else {
+                    Write-Host ("Skipping untrusted .private-release package " `
+                        + "(not signed by a BUILTIN_TRUSTED_KEYS key): $([System.IO.Path]::GetFileName($path))")
+                }
+            }
+            $EmbeddedLoaderPackages = @($trusted)
+            if ($EmbeddedLoaderPackages.Count -gt 0) {
+                Write-Host ("No -EmbeddedLoaderPackages given; auto-discovered " `
+                    + "$($EmbeddedLoaderPackages.Count) trusted package(s) in $defaultLoaderDir")
+            }
         }
     }
 }

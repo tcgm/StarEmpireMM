@@ -700,6 +700,33 @@ class ManagerApp:
         self._apply_theme(bool(self.dark_mode.get()))
         self._save_manager_settings()
 
+    def _reconcile_mod_support_before_launch(self) -> None:
+        """Re-adapt a stale patch before the launcher can run on top of it.
+
+        Star Empire's own launcher silently re-verifies and replaces
+        Client.exe on every launch, independent of the Manager -- on an
+        actively-updated build this can happen between almost every attempt
+        to play. A previously-installed patch that no longer matches the
+        live Client.exe shows up as ``Inspection.state is not None`` with a
+        non-healthy status (see ``inspect_installation``'s "launcher
+        replaced a modded client" cases in manager_core.py). Rather than
+        silently launching a reverted vanilla client, Launch always retries
+        the same automatic rebuild the global switch and "Prepare Game" use
+        first. If that rebuild can't find a safe binding for the new build,
+        it leaves its own error dialog and this still falls through to an
+        ordinary launch rather than blocking play entirely.
+        """
+        self.refresh()
+        inspection = self._inspection
+        if (inspection is None
+                or inspection.state is None
+                or inspection.status in (
+                    InstallStatus.GAME_RUNNING, InstallStatus.PROCESS_CHECK_FAILED)
+                or (inspection.status is InstallStatus.INSTALLED_HEALTHY
+                    and not inspection.can_update)):
+            return
+        self._prepare_game_for_mod_install()
+
     def _launch_game(self) -> None:
         selected = self.game_path.get().strip()
         if not selected:
@@ -707,6 +734,7 @@ class ManagerApp:
                 "Cannot launch Star Empire", "Choose a game folder first.")
             return
         root = Path(selected).expanduser().resolve()
+        self._reconcile_mod_support_before_launch()
         launcher = root / LAUNCHER_EXE
         if not launcher.is_file():
             messagebox.showerror(
