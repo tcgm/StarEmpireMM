@@ -2,7 +2,7 @@
 
 Star Empire Mod Manager installs and controls community mods without asking players to edit game files by hand.
 
-The v0.8 pre-alpha includes exact-match support for the tested Star Empire
+The v0.9 pre-alpha includes exact-match support for the tested Star Empire
 0.5.25 client and retains 0.5.14 support. It is for hands-on testing; post-login
 gameplay has not yet been confirmed. If a game update changes `Client.exe`, the
 Manager will refuse an unverified install rather than guess at compatibility,

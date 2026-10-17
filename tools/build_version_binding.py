@@ -304,8 +304,37 @@ def _verify_anchor_pattern(
     raise last_error
 
 
+_RUN_LOOP_NAMES = ("_run_loop", "run")
+
+
+def _run_loop_method(window_class: ast.ClassDef) -> ast.AST:
+    """The ``SolarSystemWindow`` method that owns the main loop.
+
+    Newer builds keep ``run`` as a thin wrapper that hands the real loop to
+    ``_run_loop`` (to run it under a block of pre-reserved frame stack); older
+    builds put the loop in ``run`` itself. Prefer ``_run_loop`` when present.
+    """
+    for name in _RUN_LOOP_NAMES:
+        methods = [node for node in window_class.body
+                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                   and node.name == name]
+        if methods:
+            return _exactly_one(methods, f"SolarSystemWindow.{name}")
+    raise VersionBindingError("SolarSystemWindow main loop method is missing")
+
+
+def _run_loop_qualname(source: bytes) -> str:
+    tree = ast.parse(source.decode("utf-8"), filename="Client.py")
+    window_class = _exactly_one(
+        (node for node in tree.body
+         if isinstance(node, ast.ClassDef) and node.name == "SolarSystemWindow"),
+        "SolarSystemWindow class",
+    )
+    return f"SolarSystemWindow.{_run_loop_method(window_class).name}"
+
+
 def _client_run_anchor_nodes(source: bytes) -> dict[str, ast.AST]:
-    """AST nodes for every reviewed Client.py anchor inside SolarSystemWindow.run.
+    """AST nodes for every reviewed Client.py anchor inside the SolarSystemWindow main loop.
 
     Excludes the top-level ``__main__`` guard, which lives outside ``run``
     and is instead covered by the module-level shallow structural check.
@@ -316,12 +345,7 @@ def _client_run_anchor_nodes(source: bytes) -> dict[str, ast.AST]:
          if isinstance(node, ast.ClassDef) and node.name == "SolarSystemWindow"),
         "SolarSystemWindow class",
     )
-    run = _exactly_one(
-        (node for node in window_class.body
-         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-         and node.name == "run"),
-        "SolarSystemWindow.run",
-    )
+    run = _run_loop_method(window_class)
     display_assignment = _exactly_one(
         (node for node in run.body if _is_screen_display_assignment(node)),
         "initial display-mode assignment",
@@ -407,14 +431,15 @@ def verify_targeted_client_archive(client_exe: Path, source: bytes) -> None:
     if _shallow_logic_signature(loose) != _shallow_logic_signature(embedded):
         raise VersionBindingError(
             "Client top-level structure does not match the frozen build")
-    run_embedded = _find_code_by_qualname(embedded, "SolarSystemWindow.run")
+    qualname = _run_loop_qualname(source)
+    run_embedded = _find_code_by_qualname(embedded, qualname)
     if run_embedded is None:
         raise VersionBindingError(
-            "Client is missing the reviewed anchor SolarSystemWindow.run")
-    run_loose = _find_code_by_qualname(loose, "SolarSystemWindow.run")
+            f"Client is missing the reviewed anchor {qualname}")
+    run_loose = _find_code_by_qualname(loose, qualname)
     if run_loose is None:
         raise VersionBindingError(
-            "loose Client.py is missing SolarSystemWindow.run")
+            f"loose Client.py is missing {qualname}")
     haystack = _full_pattern(run_embedded)
     for label, node in _client_run_anchor_nodes(source).items():
         _verify_anchor_pattern(label, haystack, run_loose, node)
@@ -723,12 +748,7 @@ def locate_target_vitals_offsets(
          if isinstance(node, ast.ClassDef) and node.name == "SolarSystemWindow"),
         "SolarSystemWindow class",
     )
-    run = _exactly_one(
-        (node for node in window_class.body
-         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-         and node.name == "run"),
-        "SolarSystemWindow.run",
-    )
+    run = _run_loop_method(window_class)
     display_assignment = _exactly_one(
         (node for node in run.body if _is_screen_display_assignment(node)),
         "initial display-mode assignment",
@@ -778,12 +798,7 @@ def locate_release_offsets(
          if isinstance(node, ast.ClassDef) and node.name == "SolarSystemWindow"),
         "SolarSystemWindow class",
     )
-    run = _exactly_one(
-        (node for node in window_class.body
-         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-         and node.name == "run"),
-        "SolarSystemWindow.run",
-    )
+    run = _run_loop_method(window_class)
     display_assignment = _exactly_one(
         (node for node in run.body if _is_screen_display_assignment(node)),
         "initial display-mode assignment",

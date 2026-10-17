@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9 (pre-alpha)
+
+- Fixed compatibility binding for Star Empire 0.5.501, which moved the main
+  loop from `SolarSystemWindow.run` into a new `_run_loop` method. The
+  binding tool now locates the loop method structurally, falling back to
+  `run` for older builds.
+
 ## v0.8 (pre-alpha)
 
 - Added a targeted compatibility verification mode: when a game update

@@ -11,7 +11,7 @@ import sys
 
 
 # Public release version. Keep this aligned with the GitHub release tag.
-MANAGER_VERSION = "0.8"
+MANAGER_VERSION = "0.9"
 
 # Compatibility capability of the existing signed loader template. This is
 # package metadata, not the public Manager release version.
