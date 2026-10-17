@@ -39,6 +39,7 @@ from .manager_settings import (
     ManagerSettings, ManagerSettingsError, SETTINGS_FILENAME,
     load_manager_settings, save_manager_settings,
 )
+from .mod_host_patches import reconcile_all_mod_host_patches
 from .mod_registry import InstalledMod, ModRegistryError
 from .mod_service import ModServiceError
 from .mod_updates import ModUpdateError
@@ -724,8 +725,35 @@ class ManagerApp:
                     InstallStatus.GAME_RUNNING, InstallStatus.PROCESS_CHECK_FAILED)
                 or (inspection.status is InstallStatus.INSTALLED_HEALTHY
                     and not inspection.can_update)):
+            self._reconcile_mod_host_patches()
             return
         self._prepare_game_for_mod_install()
+        self._reconcile_mod_host_patches()
+
+    def _reconcile_mod_host_patches(self) -> None:
+        """Apply any enabled mod's host_patches.json that isn't already
+        applied (see mod_host_patches.py's own module docstring for why
+        this exists and its safety properties) -- same "before every
+        launch" spot as the mod-loader framework's own patch rebuild just
+        above, so a mod's host patch self-heals the same way after the
+        game's own launcher silently replaces host files out from under
+        a previous installation. Never blocks launching: any failure here
+        is swallowed, since a missing visual-only patch is far better than
+        refusing to play."""
+        selected = self.game_path.get().strip()
+        if not selected:
+            return
+        internal_root = Path(selected).expanduser().resolve() / "_internal"
+        if not internal_root.is_dir():
+            return
+        try:
+            installed = self._mods.registry().by_id()
+            report = reconcile_all_mod_host_patches(internal_root, installed)
+        except Exception:
+            return
+        if report.applied:
+            self.summary_text.set(
+                "Applied mod host patch(es): " + ", ".join(report.applied))
 
     def _launch_game(self) -> None:
         selected = self.game_path.get().strip()
